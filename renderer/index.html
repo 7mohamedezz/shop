@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>متجر السباكة</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>متجر السباكة</h1>
+    <nav>
+      <button class="tab active" data-tab="invoices">الفواتير</button>
+      <button class="tab" data-tab="products">المنتجات</button>
+      <button class="tab" data-tab="customers">العملاء</button>
+      <button class="tab" data-tab="search">بحث</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="invoices" class="page active">
+      <div class="panel">
+        <h2>إنشاء فاتورة</h2>
+        <form id="invoice-form">
+          <div class="row">
+            <label>اسم العميل
+              <div class="autocomplete">
+                <input type="text" id="cust-name" required/>
+                <div id="cust-suggestions" class="suggestions" style="display:none"></div>
+              </div>
+            </label>
+            <label>الهاتف<input type="text" id="cust-phone" required/></label>
+            <label>السباك
+              <div class="autocomplete">
+                <input type="text" id="plumber-name" />
+                <div id="plumber-suggestions" class="suggestions" style="display:none"></div>
+              </div>
+            </label>
+          </div>
+          <div class="row">
+            <label>خصم ابوغالي %<input type="number" id="discount-abogali" min="0" max="100" step="1" value="0" /></label>
+            <label>خصم BR %<input type="number" id="discount-br" min="0" max="100" step="1" value="0" /></label>
+          </div>
+          <div class="row">
+            <label>ملاحظات<textarea id="invoice-notes" rows="2" placeholder="ملاحظات الفاتورة..."></textarea></label>
+          </div>
+          <div>
+            <table class="items-table">
+              <thead>
+                <tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th></th></tr>
+              </thead>
+              <tbody id="items-body"></tbody>
+            </table>
+            <button type="button" id="add-item">+ إضافة بند</button>
+          </div>
+          <div class="row right">
+            <div><strong>الإجمالي:</strong> <span id="total">0.00</span></div>
+            <div><strong>المتبقي:</strong> <span id="remaining">0.00</span></div>
+          </div>
+          <div>
+            <h3>المدفوعات</h3>
+            <table class="items-table">
+              <thead><tr><th>المبلغ</th><th>التاريخ</th><th>ملاحظة</th><th></th></tr></thead>
+              <tbody id="payments-body"></tbody>
+            </table>
+            <button type="button" id="add-payment">+ إضافة دفعة</button>
+          </div>
+          <div class="row">
+            <button type="submit">إنشاء فاتورة</button>
+          </div>
+          <div id="invoice-error" class="muted" style="color:#fca5a5"></div>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>قائمة الفواتير</h2>
+        <div class="row">
+          <input type="text" id="invoice-search" placeholder="بحث بالعميل أو السباك أو الهاتف" />
+          <select id="archive-filter">
+            <option value="all">الكل</option>
+            <option value="active" selected>نشطة</option>
+            <option value="archived">مؤرشفة</option>
+          </select>
+          <button id="refresh-invoices">تحديث</button>
+        </div>
+        <div id="invoice-list"></div>
+        <div id="invoice-detail" class="panel" style="margin-top:12px; display:none"></div>
+      </div>
+    </section>
+
+    <section id="products" class="page">
+      <div class="panel">
+        <h2>المنتجات</h2>
+        <div class="row">
+          <input type="text" id="product-search" placeholder="بحث عن منتج بالاسم..." />
+          <button id="product-search-btn">بحث</button>
+        </div>
+        <form id="product-form" class="row">
+          <input type="text" id="prod-name" placeholder="الاسم" required />
+          <input type="text" id="prod-category" placeholder="الفئة (مثال: ابوغالي، BR)" />
+          <input type="number" id="prod-buy" placeholder="سعر الشراء" step="0.01" required />
+          <input type="number" id="prod-sell" placeholder="سعر البيع" step="0.01" required />
+          <input type="number" id="prod-stock" placeholder="المخزون" />
+          <button type="submit">حفظ</button>
+        </form>
+        <div id="product-message" class="muted" style="margin:6px 0; color:#93c5fd"></div>
+        <div id="product-list"></div>
+      </div>
+    </section>
+
+    <section id="customers" class="page">
+      <div class="panel">
+        <h2>العملاء والسباكون</h2>
+        <div class="row">
+          <input type="text" id="live-customer-search" placeholder="ابحث عن عميل بالاسم أو الهاتف" />
+          <div id="live-customer-results" class="suggestions" style="display:none; position:relative"></div>
+          <input type="text" id="live-plumber-search" placeholder="ابحث عن سباك بالاسم أو الهاتف" />
+          <div id="live-plumber-results" class="suggestions" style="display:none; position:relative"></div>
+        </div>
+        <h3>إضافة عميل</h3>
+        <form id="customer-form" class="row">
+          <input type="text" id="new-cust-name" placeholder="اسم العميل" required />
+          <input type="text" id="new-cust-phone" placeholder="الهاتف" required />
+          <button type="submit">حفظ</button>
+        </form>
+        <h3 style="margin-top:16px">إضافة سباك</h3>
+        <form id="plumber-form" class="row">
+          <input type="text" id="new-plumber-name" placeholder="اسم السباك" required />
+          <input type="text" id="new-plumber-phone" placeholder="الهاتف" />
+          <button type="submit">حفظ</button>
+        </form>
+        <div class="row" style="margin-top:12px">
+          <button id="refresh-people">تحديث القوائم</button>
+        </div>
+        <div class="row" style="gap:24px">
+          <div style="flex:1">
+            <h3>العملاء</h3>
+            <div id="customer-list"></div>
+          </div>
+          <div style="flex:1">
+            <h3>السباكون</h3>
+            <div id="plumber-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="search" class="page">
+      <div class="panel">
+        <h2>بحث عام</h2>
+        <div class="row">
+          <input type="text" id="search-input" placeholder="اكتب للبحث عن الفواتير..." />
+          <button id="search-btn">بحث</button>
+        </div>
+        <div id="search-results"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
