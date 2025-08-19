@@ -25,4 +25,17 @@ async function searchPlumbers(prefix) {
     .lean();
 }
 
-module.exports = { upsertPlumberByName, listPlumbers, searchPlumbers };
+async function updatePlumber(id, data) {
+  const { Plumber } = getLocalModels();
+  const update = { name: data.name, phone: data.phone || '' };
+  const doc = await Plumber.findByIdAndUpdate(id, update, { new: true }).lean();
+  return doc;
+}
+
+async function deletePlumber(id) {
+  const { Plumber } = getLocalModels();
+  const doc = await Plumber.findByIdAndDelete(id).lean();
+  return doc;
+}
+
+module.exports = { upsertPlumberByName, listPlumbers, searchPlumbers, updatePlumber, deletePlumber };

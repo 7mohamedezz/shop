@@ -48,7 +48,7 @@ module.exports = function loadInvoice(connection) {
     const itemsTotal = (this.items || []).reduce((sum, it) => sum + (it.qty || 0) * ((it.discountedPrice ?? it.price) || 0), 0);
     const paid = (this.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
     this.total = Number(itemsTotal.toFixed(2));
-    this.remaining = Number(Math.max(0, this.total - paid).toFixed(2));
+    this.remaining = Number((this.total - paid).toFixed(2));
   };
 
   return connection.models.Invoice || connection.model('Invoice', InvoiceSchema);

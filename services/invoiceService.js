@@ -11,14 +11,14 @@ function isNumericId(v) {
 function computeTotals(items, payments) {
   const total = (items || []).reduce((sum, it) => sum + (it.qty || 0) * ((it.discountedPrice ?? it.price) || 0), 0);
   const paid = (payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
-  const remaining = Math.max(0, total - paid);
+  const remaining = total - paid;
   return { total: Number(total.toFixed(2)), remaining: Number(remaining.toFixed(2)) };
 }
 
 function normalizeCategoryName(name) {
   if (!name) return '';
   const n = String(name).replace(/\s+/g, '').toLowerCase();
-  if (n === 'br') return 'br';
+  if (n === 'br' || n === 'pr') return 'br';
   // Accept common spellings for Abogali (Arabic/English)
   if (n === 'ابوغالي' || n === 'ابوغازي' || n === 'abogali' || n === 'aboghali' || n === 'aboghly' || n === 'aboghali') return 'ابوغالي';
   return n;
@@ -122,6 +122,17 @@ async function listInvoices(filters) {
   const query = {};
   if (filters.archived === true) query.archived = true;
   if (filters.archived === false) query.archived = false;
+
+  // Explicit filter by customerId
+  if (filters.customerId) {
+    const cid = toObjectIdString(filters.customerId);
+    if (cid) query.customer = Types.ObjectId.createFromHexString(cid);
+  }
+  // Explicit filter by plumberName (exact, case-insensitive)
+  if (filters.plumberName) {
+    const n = String(filters.plumberName || '').trim();
+    if (n) query.plumberName = new RegExp('^' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
+  }
 
   if (filters.search) {
     const s = String(filters.search).trim();
@@ -336,14 +347,41 @@ async function createReturnInvoice(payload) {
     inv = await Invoice.findById(validId);
   }
   if (!inv) throw new Error('Original invoice not found');
-  // No validation: accept any returned items
-  const items = (payload.items || []).map(it => ({
-    product: (it.productName || it.product || '').trim(),
-    productId: it.productId && Types.ObjectId.isValid(it.productId) ? it.productId : undefined,
-    productName: (it.productName || it.product || '').trim(),
-    qty: Number(it.qty || 0),
-    price: Number(it.price || 0)
-  })).filter(it => it.product && it.qty > 0);
+  // Ensure we can match by product name when needed
+  try { await inv.populate({ path: 'items.product' }); } catch {}
+
+  // Build return items: use original invoice effective price (discountedPrice ?? price)
+  const items = (payload.items || []).map(raw => {
+    const name = (raw.productName || raw.product || '').trim();
+    const qty = Number(raw.qty || 0);
+    const pid = raw.productId && Types.ObjectId.isValid(raw.productId) ? String(raw.productId) : undefined;
+
+    // Find matching original item by productId or by product name
+    let originalItem = null;
+    if (pid) {
+      originalItem = (inv.items || []).find(x => {
+        const xid = x.product && typeof x.product === 'object' && x.product._id ? String(x.product._id) : String(x.product || '');
+        return String(xid) === String(pid);
+      }) || null;
+    }
+    if (!originalItem && name) {
+      const norm = String(name).trim().toLowerCase();
+      originalItem = (inv.items || []).find(x => {
+        const xname = (x.product && x.product.name) ? x.product.name : '';
+        return String(xname).trim().toLowerCase() === norm;
+      }) || null;
+    }
+
+    const effectivePrice = Number((originalItem ? (originalItem.discountedPrice ?? originalItem.price) : Number(raw.price || 0)).toFixed(2));
+
+    return {
+      product: name,
+      productId: pid ? Types.ObjectId.createFromHexString(pid) : undefined,
+      productName: name,
+      qty,
+      price: effectivePrice
+    };
+  }).filter(it => it.product && it.qty > 0);
   const doc = await ReturnInvoice.create({
     originalInvoice: inv._id,
     items,
@@ -392,6 +430,17 @@ async function generateInvoicePrintableHtml(invoiceId) {
     console.error('Invoice not found:', { validId });
     throw new Error('Invoice not found');
   }
+  // Try to resolve plumber phone by name for display
+  let plumberPhone = '';
+  try {
+    if (inv.plumberName) {
+      const { Plumber } = getLocalModels();
+      const pl = await Plumber.findOne({ name: inv.plumberName }).lean();
+      plumberPhone = pl?.phone || '';
+    }
+  } catch (e) {
+    console.warn('Could not resolve plumber phone for', inv.plumberName, e?.message);
+  }
   const paymentsRows = (inv.payments || []).map(p => `
     <tr>
       <td>${dayjs(p.date).format('YYYY-MM-DD')}</td>
@@ -400,15 +449,21 @@ async function generateInvoicePrintableHtml(invoiceId) {
     </tr>
   `).join('');
   const itemsTotal = Number(inv.total || 0);
-  const paidTotal = Number((inv.payments || []).reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(2));
-  const returnTotal = Number((inv.returnInvoice?.items || []).reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0).toFixed(2));
-  const remaining = Number((inv.remaining ?? Math.max(0, itemsTotal - paidTotal)).toFixed(2));
+  const paidTotal = Number((inv.payments || [])
+    .filter(p => String(p.note || '').trim() !== 'مرتجع')
+    .reduce((s, x) => s + Number(x.amount || 0), 0)
+    .toFixed(2));
+  const returnTotal = Number((inv.returnInvoice?.items || [])
+    .reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0)
+    .toFixed(2));
+  const remaining = Number((itemsTotal - (paidTotal + returnTotal)).toFixed(2));
   const returnSection = inv.returnInvoice ? `
     <h3>مرتجع</h3>
     <div>التاريخ: ${dayjs(inv.returnInvoice.createdAt).format('YYYY-MM-DD')}</div>
     <table class="tbl">
       <thead>
         <tr>
+          <th style="width:36px; text-align:center">#</th>
           <th>الصنف</th>
           <th>الكمية</th>
           <th>السعر</th>
@@ -416,8 +471,9 @@ async function generateInvoicePrintableHtml(invoiceId) {
         </tr>
       </thead>
       <tbody>
-        ${inv.returnInvoice.items.map(ri => `
+        ${inv.returnInvoice.items.map((ri, idx) => `
           <tr>
+            <td style="text-align:center">${idx + 1}</td>
             <td>${ri.productName || ri.product}</td>
             <td style="text-align:center">${ri.qty}</td>
             <td style="text-align:right">${Number(ri.price).toFixed(2)}</td>
@@ -434,8 +490,9 @@ async function generateInvoicePrintableHtml(invoiceId) {
   // const profit = revenue - cost;
   const discountInfo = '';
 
-  const rows = (inv.items || []).map(it => `
+  const rows = (inv.items || []).map((it, idx) => `
     <tr>
+      <td style="text-align:center">${idx + 1}</td>
       <td>${it.product?.name || ''}</td>
       <td>${it.category || ''}</td>
       <td style="text-align:center">${it.qty}</td>
@@ -450,18 +507,20 @@ async function generateInvoicePrintableHtml(invoiceId) {
       <meta charset="utf-8" />
       <title>فاتورة ${inv._id}</title>
       <style>
-        body { font-family: 'Tajawal', 'Cairo', Arial, sans-serif; padding: 24px; direction: rtl; }
-        h1,h2,h3 { margin: 8px 0; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        body { font-family: 'Tajawal', 'Cairo', Arial, sans-serif; padding: 16px; direction: rtl; font-size: 11px; }
+        h1 { margin: 6px 0; font-size: 16px; }
+        h2 { margin: 6px 0; font-size: 14px; }
+        h3 { margin: 6px 0; font-size: 13px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
         .muted { color: #666; }
-        table { direction: rtl; }
+        table { direction: rtl; font-size: 11px; }
         .tbl { width:100%; border-collapse: collapse; }
-        .tbl th, .tbl td { border: 1px solid #e5e7eb; padding: 6px; }
+        .tbl th, .tbl td { border: 1px solid #e5e7eb; padding: 3px 4px; }
         .tbl thead th { background:#f3f4f6; }
-        .totals-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:16px; }
-        .card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:12px; }
-        .card .label { font-size:12px; color:#6b7280; margin-bottom:6px; }
-        .card .value { font-size:20px; font-weight:700; color:#111827; }
+        .totals-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-top:12px; }
+        .card { background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:8px; }
+        .card .label { font-size:10px; color:#6b7280; margin-bottom:4px; }
+        .card .value { font-size:16px; font-weight:700; color:#111827; }
       </style>
     </head>
     <body>
@@ -472,7 +531,7 @@ async function generateInvoicePrintableHtml(invoiceId) {
         <div>
           <div><strong>العميل:</strong> ${inv.customer?.name || ''}</div>
           <div><strong>الهاتف:</strong> ${inv.customer?.phone || ''}</div>
-          <div><strong>السباك:</strong> ${inv.plumberName || ''}</div>
+          <div><strong>السباك:</strong> ${inv.plumberName || ''}${plumberPhone ? ` — هاتف: ${plumberPhone}` : ''}</div>
         </div>
         <div style="text-align:left">
           <div><strong>التاريخ:</strong> ${dayjs(inv.createdAt).format('YYYY-MM-DD HH:mm')}</div>
@@ -484,6 +543,7 @@ async function generateInvoicePrintableHtml(invoiceId) {
       <table class="tbl">
         <thead>
           <tr>
+            <th style="width:36px; text-align:center">#</th>
             <th>الصنف</th>
             <th>الفئة</th>
             <th>الكمية</th>

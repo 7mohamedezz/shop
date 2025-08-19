@@ -5,7 +5,11 @@
   "scripts": {
     "start": "ELECTRON_DISABLE_SANDBOX=1 electron .",
     "dev": "ELECTRON_DISABLE_SANDBOX=1 electron .",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "seed": "node scripts/seed.js",
+    "wipe:local": "node scripts/wipe.js --local --yes",
+    "wipe:atlas": "node scripts/wipe.js --atlas --yes",
+    "wipe:both": "node scripts/wipe.js --both --yes"
   },
   "keywords": [],
   "author": "",

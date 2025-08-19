@@ -124,10 +124,14 @@ ipcMain.handle('products:list', async () => {
 
 ipcMain.handle('products:update', async (_e, { id, update }) => {
   try {
-    console.log('📝 Updating product:', id, update);
-    const updated = await productService.updateProduct(id, update);
-    await enqueueSync('Product', 'update', { id, update });
-    console.log('✅ Product updated:', id);
+    const normalizedId = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+    if (!normalizedId) {
+      return { error: true, message: 'Invalid product ID format' };
+    }
+    console.log('📝 Updating product:', normalizedId, update);
+    const updated = await productService.updateProduct(normalizedId, update);
+    await enqueueSync('Product', 'update', { id: normalizedId, update });
+    console.log('✅ Product updated:', normalizedId);
     return updated;
   } catch (error) {
     console.error('❌ Error updating product:', error);
@@ -137,10 +141,14 @@ ipcMain.handle('products:update', async (_e, { id, update }) => {
 
 ipcMain.handle('products:delete', async (_e, id) => {
   try {
-    console.log('🗑️ Deleting product:', id);
-    const deleted = await productService.deleteProduct(id);
-    await enqueueSync('Product', 'delete', { id });
-    console.log('✅ Product deleted:', id);
+    const normalizedId = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+    if (!normalizedId) {
+      return { error: true, message: 'Invalid product ID format' };
+    }
+    console.log('🗑️ Deleting product:', normalizedId);
+    const deleted = await productService.deleteProduct(normalizedId);
+    await enqueueSync('Product', 'delete', { id: normalizedId });
+    console.log('✅ Product deleted:', normalizedId);
     return deleted;
   } catch (error) {
     console.error('❌ Error deleting product:', error);
@@ -158,6 +166,30 @@ ipcMain.handle('customers:upsert', async (_e, payload) => {
 ipcMain.handle('customers:list', async () => customerService.listCustomers());
 ipcMain.handle('customers:search', async (_e, prefix) => customerService.searchCustomers(prefix));
 
+ipcMain.handle('customers:update', async (_e, { id, data }) => {
+  try {
+    const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+    if (!norm) return { error: true, message: 'Invalid customer ID format' };
+    const updated = await customerService.updateCustomer(norm, data || {});
+    await enqueueSync('Customer', 'update', { id: norm, update: data || {} });
+    return updated;
+  } catch (error) {
+    return { error: true, message: error.message };
+  }
+});
+
+ipcMain.handle('customers:delete', async (_e, id) => {
+  try {
+    const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+    if (!norm) return { error: true, message: 'Invalid customer ID format' };
+    const deleted = await customerService.deleteCustomer(norm);
+    await enqueueSync('Customer', 'delete', { id: norm });
+    return deleted;
+  } catch (error) {
+    return { error: true, message: error.message };
+  }
+});
+
 // Plumber IPC
 ipcMain.handle('plumbers:upsert', async (_e, payload) => {
   const plumber = await plumberService.upsertPlumberByName(payload);
@@ -166,6 +198,30 @@ ipcMain.handle('plumbers:upsert', async (_e, payload) => {
 });
 ipcMain.handle('plumbers:list', async () => plumberService.listPlumbers());
 ipcMain.handle('plumbers:search', async (_e, prefix) => plumberService.searchPlumbers(prefix));
+
+ipcMain.handle('plumbers:update', async (_e, { id, data }) => {
+  try {
+    const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+    if (!norm) return { error: true, message: 'Invalid plumber ID format' };
+    const updated = await plumberService.updatePlumber(norm, data || {});
+    await enqueueSync('Plumber', 'update', { id: norm, update: data || {} });
+    return updated;
+  } catch (error) {
+    return { error: true, message: error.message };
+  }
+});
+
+ipcMain.handle('plumbers:delete', async (_e, id) => {
+  try {
+    const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+    if (!norm) return { error: true, message: 'Invalid plumber ID format' };
+    const deleted = await plumberService.deletePlumber(norm);
+    await enqueueSync('Plumber', 'delete', { id: norm });
+    return deleted;
+  } catch (error) {
+    return { error: true, message: error.message };
+  }
+});
 
 // Invoice IPC
 ipcMain.handle('invoices:create', async (_e, payload) => {
@@ -186,16 +242,27 @@ ipcMain.handle('invoices:getById', async (_e, id) => invoiceService.getInvoiceBy
 
 ipcMain.handle('invoices:addPayment', async (_e, { invoiceId, payment }) => {
   console.log("IPC 'invoices:addPayment' received:", { invoiceIdType: typeof invoiceId, invoiceId });
-  // Normalize invoiceId to a valid ObjectId string defensively
-  const normalizedId = toObjectIdString(invoiceId)
-    || toObjectIdString(invoiceId?._id)
-    || toObjectIdString(invoiceId?.id);
-  console.log("IPC 'invoices:addPayment' normalizedId:", normalizedId);
-  if (!normalizedId) {
-    return { error: true, message: `Invalid invoice ID format` };
+  const s = String(invoiceId ?? '').trim();
+  let keyForSync = null;
+  let targetId = null;
+  if (/^\d+$/.test(s)) {
+    // Accept numeric invoiceNumber
+    targetId = Number(s);
+    keyForSync = targetId;
+  } else {
+    // Normalize invoiceId to a valid ObjectId string defensively
+    const normalizedId = toObjectIdString(invoiceId)
+      || toObjectIdString(invoiceId?._id)
+      || toObjectIdString(invoiceId?.id);
+    console.log("IPC 'invoices:addPayment' normalizedId:", normalizedId);
+    if (!normalizedId) {
+      return { error: true, message: `Invalid invoice ID format` };
+    }
+    targetId = normalizedId;
+    keyForSync = normalizedId;
   }
-  const result = await invoiceService.addPaymentToInvoice(normalizedId, payment || {});
-  await enqueueSync('Invoice', 'update', { id: normalizedId, update: { payments: result.payments, remaining: result.remaining } });
+  const result = await invoiceService.addPaymentToInvoice(targetId, payment || {});
+  await enqueueSync('Invoice', 'update', { id: keyForSync, update: { payments: result.payments, remaining: result.remaining } });
   return result;
 });
 
@@ -235,18 +302,20 @@ ipcMain.handle('returns:create', async (_e, payload) => {
 
 ipcMain.handle('print:invoice', async (_e, invoiceId) => {
   const html = await invoiceService.generateInvoicePrintableHtml(invoiceId);
-  const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
-  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-  const pdfBuffer = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
-  const { filePath } = await dialog.showSaveDialog({
-    title: 'Save Invoice PDF',
-    defaultPath: `invoice-${invoiceId}.pdf`,
-    filters: [{ name: 'PDF', extensions: ['pdf'] }]
+  // Open a visible preview window and trigger Chromium's print preview (allows "Save to PDF")
+  const win = new BrowserWindow({
+    show: true,
+    width: 900,
+    height: 1200,
+    webPreferences: { contextIsolation: true }
   });
-  if (filePath) {
-    const fs = require('fs');
-    fs.writeFileSync(filePath, pdfBuffer);
-  }
-  win.close();
-  return { success: true, saved: Boolean(filePath) };
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+
+  // Slight delay to ensure rendering, then open preview
+  setTimeout(() => {
+    win.webContents.executeJavaScript('window.print();');
+  }, 100);
+
+  // Do not close the window automatically; user can close after printing/saving
+  return { success: true, preview: true };
 });

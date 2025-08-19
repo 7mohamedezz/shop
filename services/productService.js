@@ -1,5 +1,11 @@
 const { getLocalModels } = require('./db');
 
+function serialize(doc) {
+  if (!doc) return doc;
+  const obj = doc.toObject ? doc.toObject() : doc;
+  return { ...obj, _id: String(obj._id) };
+}
+
 async function createProduct(data) {
   const { Product } = getLocalModels();
   const created = await Product.create({
@@ -9,18 +15,20 @@ async function createProduct(data) {
     sellingPrice: data.sellingPrice ?? data.price ?? 0,
     stock: data.stock ?? 0
   });
-  return created.toObject();
+  return serialize(created);
 }
 
 async function listProducts() {
   const { Product } = getLocalModels();
-  return Product.find({}).sort({ createdAt: -1 }).lean();
+  const docs = await Product.find({}).sort({ createdAt: -1 }).lean();
+  return docs.map(serialize);
 }
 
 async function searchProductsByNamePrefix(prefix) {
   const { Product } = getLocalModels();
   const rx = new RegExp('^' + (prefix || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-  return Product.find({ name: { $regex: rx } }).sort({ name: 1 }).limit(20).lean();
+  const docs = await Product.find({ name: { $regex: rx } }).sort({ name: 1 }).limit(20).lean();
+  return docs.map(serialize);
 }
 
 async function updateProduct(id, update) {
@@ -29,12 +37,14 @@ async function updateProduct(id, update) {
   if (update.price != null) mapped.sellingPrice = update.price; // backward compat
   if (update.buy != null) mapped.buyingPrice = update.buy;
   if (update.category != null) mapped.category = String(update.category).trim();
-  return Product.findByIdAndUpdate(id, mapped, { new: true }).lean();
+  const doc = await Product.findByIdAndUpdate(id, mapped, { new: true }).lean();
+  return serialize(doc);
 }
 
 async function deleteProduct(id) {
   const { Product } = getLocalModels();
-  return Product.findByIdAndDelete(id).lean();
+  const doc = await Product.findByIdAndDelete(id).lean();
+  return serialize(doc);
 }
 
 module.exports = {

@@ -25,4 +25,17 @@ async function searchCustomers(prefix) {
     .lean();
 }
 
-module.exports = { upsertCustomerByPhone, listCustomers, searchCustomers };
+async function updateCustomer(id, data) {
+  const { Customer } = getLocalModels();
+  const update = { name: data.name, phone: data.phone };
+  const doc = await Customer.findByIdAndUpdate(id, update, { new: true }).lean();
+  return doc;
+}
+
+async function deleteCustomer(id) {
+  const { Customer } = getLocalModels();
+  const doc = await Customer.findByIdAndDelete(id).lean();
+  return doc;
+}
+
+module.exports = { upsertCustomerByPhone, listCustomers, searchCustomers, updateCustomer, deleteCustomer };

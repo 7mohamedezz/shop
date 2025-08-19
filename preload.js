@@ -11,12 +11,16 @@ contextBridge.exposeInMainWorld('api', {
   customers: {
     upsert: (data) => ipcRenderer.invoke('customers:upsert', data),
     list: () => ipcRenderer.invoke('customers:list'),
-    search: (prefix) => ipcRenderer.invoke('customers:search', prefix)
+    search: (prefix) => ipcRenderer.invoke('customers:search', prefix),
+    update: (id, data) => ipcRenderer.invoke('customers:update', { id, data }),
+    delete: (id) => ipcRenderer.invoke('customers:delete', id)
   },
   plumbers: {
     upsert: (data) => ipcRenderer.invoke('plumbers:upsert', data),
     list: () => ipcRenderer.invoke('plumbers:list'),
-    search: (prefix) => ipcRenderer.invoke('plumbers:search', prefix)
+    search: (prefix) => ipcRenderer.invoke('plumbers:search', prefix),
+    update: (id, data) => ipcRenderer.invoke('plumbers:update', { id, data }),
+    delete: (id) => ipcRenderer.invoke('plumbers:delete', id)
   },
   invoices: {
     create: (payload) => ipcRenderer.invoke('invoices:create', payload),

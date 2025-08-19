@@ -89,11 +89,12 @@ async function showEditInvoiceForm(invoiceId) {
               <tbody id="edit-items-body">
                 ${(inv.items || []).map((item, index) => `
                   <tr>
-                    <td style="padding: 8px; border: 1px solid #d1d5db;">
+                    <td style="padding: 8px; border: 1px solid #d1d5db; position: relative;">
                       <input type="text" data-index="${index}" class="edit-item-name" value="${item.product?.name || ''}" style="width: 100%; border: none; background: transparent;" />
+                      <div class="edit-item-suggestions" style="display:none; position:absolute; right:0; left:0; top:100%; z-index:1001; background:#fff; border:1px solid #d1d5db; max-height:200px; overflow:auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);"></div>
                     </td>
                     <td style="padding: 8px; border: 1px solid #d1d5db;">
-                      <input type="number" data-index="${index}" class="edit-item-qty" value="${item.qty}" min="0" step="1" style="width: 100%; border: none; background: transparent;" />
+                      <input type="number" data-index="${index}" class="edit-item-qty" value="${item.qty}" min="0" step="0.01" style="width: 100%; border: none; background: transparent;" />
                     </td>
                     <td style="padding: 8px; border: 1px solid #d1d5db;">
                       <input type="number" data-index="${index}" class="edit-item-price" value="${item.price}" min="0" step="0.01" style="width: 100%; border: none; background: transparent;" />
@@ -136,11 +137,12 @@ async function showEditInvoiceForm(invoiceId) {
       const newIndex = tbody.children.length;
       const newRow = document.createElement('tr');
       newRow.innerHTML = `
-        <td style="padding: 8px; border: 1px solid #d1d5db;">
+        <td style="padding: 8px; border: 1px solid #d1d5db; position: relative;">
           <input type="text" data-index="${newIndex}" class="edit-item-name" placeholder="اسم المنتج" style="width: 100%; border: none; background: transparent;" />
+          <div class="edit-item-suggestions" style="display:none; position:absolute; right:0; left:0; top:100%; z-index:1001; background:#fff; border:1px solid #d1d5db; max-height:200px; overflow:auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);"></div>
         </td>
         <td style="padding: 8px; border: 1px solid #d1d5db;">
-          <input type="number" data-index="${newIndex}" class="edit-item-qty" value="1" min="0" step="1" style="width: 100%; border: none; background: transparent;" />
+          <input type="number" data-index="${newIndex}" class="edit-item-qty" value="1" min="0" step="0.01" style="width: 100%; border: none; background: transparent;" />
         </td>
         <td style="padding: 8px; border: 1px solid #d1d5db;">
           <input type="number" data-index="${newIndex}" class="edit-item-price" value="0" min="0" step="0.01" style="width: 100%; border: none; background: transparent;" />
@@ -153,6 +155,7 @@ async function showEditInvoiceForm(invoiceId) {
         </td>
       `;
       tbody.appendChild(newRow);
+      attachLiveSearchToRow(newRow);
     });
     
     // Remove item functionality
@@ -165,6 +168,9 @@ async function showEditInvoiceForm(invoiceId) {
       }
     });
     
+    // Attach live search to all current rows
+    $$('#edit-items-body tr').forEach(tr => attachLiveSearchToRow(tr));
+
     // Form submission
     $('#edit-invoice-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -233,4 +239,77 @@ async function showEditInvoiceForm(invoiceId) {
     console.error('Error opening edit form:', error);
     showErrorMessage('خطأ في فتح نموذج التعديل: ' + error.message);
   }
+}
+
+// Debounce utility for limiting rapid input calls
+function debounce(fn, delay = 200) {
+  let t;
+  return function(...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), delay);
+  };
+}
+
+// Wire live search/autocomplete behavior for a given edit table row
+function attachLiveSearchToRow(tr) {
+  if (!tr) return;
+  const nameInput = tr.querySelector('.edit-item-name');
+  const priceInput = tr.querySelector('.edit-item-price');
+  const categoryInput = tr.querySelector('.edit-item-category');
+  const sugg = tr.querySelector('.edit-item-suggestions');
+  if (!nameInput || !sugg) return;
+
+  const hide = () => { sugg.style.display = 'none'; };
+  const show = () => { sugg.style.display = 'block'; };
+
+  const renderList = (list) => {
+    if (!list || !list.length) { sugg.innerHTML = ''; hide(); return; }
+    sugg.innerHTML = list.map(p => {
+      const price = (p.sellingPrice ?? p.price ?? 0);
+      const cat = (p.category || '');
+      const safeName = (p.name || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<div class="opt" data-name="${safeName}" data-price="${price}" data-category="${cat}" style="padding:6px 8px; cursor:pointer; border-bottom:1px solid #eee;">
+        <div style="display:flex; justify-content:space-between; gap:8px;">
+          <span>${safeName}</span>
+          <span style="color:#6b7280; font-size:12px;">${price}${cat?` • ${cat}`:''}</span>
+        </div>
+      </div>`;
+    }).join('');
+    show();
+  };
+
+  const doSearch = debounce(async () => {
+    const q = (nameInput.value || '').trim();
+    if (!q) { sugg.innerHTML=''; hide(); return; }
+    try {
+      const res = await window.api.products.search(q);
+      renderList(res || []);
+    } catch (e) {
+      console.error('search error', e);
+      sugg.innerHTML=''; hide();
+    }
+  }, 200);
+
+  nameInput.addEventListener('input', doSearch);
+  nameInput.addEventListener('focus', () => {
+    if (sugg.innerHTML && nameInput.value.trim()) show();
+  });
+
+  // Handle suggestion click (event delegation on container)
+  sugg.addEventListener('click', (e) => {
+    const opt = e.target.closest('.opt');
+    if (!opt) return;
+    const n = opt.getAttribute('data-name') || '';
+    const p = Number(opt.getAttribute('data-price') || 0);
+    const c = opt.getAttribute('data-category') || '';
+    nameInput.value = n;
+    if (priceInput) priceInput.value = String(p);
+    if (categoryInput) categoryInput.value = c;
+    hide();
+  });
+
+  // Hide suggestions when clicking outside the row
+  document.addEventListener('click', (e) => {
+    if (!tr.contains(e.target)) hide();
+  });
 }
