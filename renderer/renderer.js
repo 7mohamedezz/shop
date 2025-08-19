@@ -3,6 +3,134 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 function currency(n) { return (Number(n || 0)).toFixed(2); }
 
+// Simple modal helper for editing a person's name/phone (customer/plumber)
+async function openEditPersonModal({ title = 'تعديل', name = '', phone = '', requirePhone = false }) {
+  const modal = document.getElementById('edit-person-modal');
+  if (!modal) {
+    // Fallback in case modal not present
+    return null;
+  }
+  const titleEl = document.getElementById('edit-person-title');
+  const nameEl = document.getElementById('edit-person-name');
+  const phoneEl = document.getElementById('edit-person-phone');
+  const errEl = document.getElementById('edit-person-error');
+  const btnCancel = document.getElementById('edit-person-cancel');
+  const btnSave = document.getElementById('edit-person-save');
+
+  titleEl.textContent = title;
+  nameEl.value = name || '';
+  phoneEl.value = phone || '';
+  errEl.textContent = '';
+
+  // show
+  modal.style.display = 'flex';
+
+  return new Promise(resolve => {
+    function cleanup() {
+      btnCancel.removeEventListener('click', onCancel);
+      btnSave.removeEventListener('click', onSave);
+      modal.removeEventListener('click', onBackdrop);
+    }
+    function close(result) {
+      modal.style.display = 'none';
+      cleanup();
+      resolve(result);
+    }
+    function onCancel() { close(null); }
+    function onBackdrop(e) { if (e.target === modal) close(null); }
+    function onSave() {
+      const n = (nameEl.value || '').trim();
+      const p = (phoneEl.value || '').trim();
+      if (!n) { errEl.textContent = 'الاسم مطلوب'; return; }
+      if (requirePhone && !p) { errEl.textContent = 'الهاتف مطلوب'; return; }
+      close({ name: n, phone: p });
+    }
+    btnCancel.addEventListener('click', onCancel);
+    btnSave.addEventListener('click', onSave);
+    modal.addEventListener('click', onBackdrop);
+  });
+}
+
+// Display invoices by explicit filters (customerId, plumberName, archived)
+async function displayInvoicesWithFilters(filters = {}) {
+  try {
+    const list = await window.api.invoices.list(filters);
+    const container = $('#search-results');
+    if (!container) return;
+    container.innerHTML = '';
+    if (list.length === 0) {
+      container.innerHTML = '<div class="muted">لا توجد فواتير</div>';
+      return;
+    }
+    list.forEach(inv => {
+      let invoiceId = inv._id;
+      if (typeof invoiceId === 'object' && invoiceId.buffer) {
+        invoiceId = Array.from(invoiceId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+      } else if (typeof invoiceId === 'object' && invoiceId.toString) {
+        invoiceId = invoiceId.toString();
+      }
+      const card = document.createElement('div');
+      card.className = 'list-card';
+      const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
+        ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
+        : '';
+      card.innerHTML = `
+        <div>
+          <div><strong>${inv.customer?.name || ''}</strong> — ${inv.customer?.phone || ''}</div>
+          <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
+          <div class="muted">تاريخ الإنشاء: ${new Date(inv.createdAt).toLocaleString()} | آخر تحديث: ${new Date(inv.updatedAt).toLocaleString()}</div>
+          <div class="muted">رقم الفاتورة: ${inv.invoiceNumber ?? '—'} | ID: ${invoiceId}</div>
+          <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)}</div>
+        </div>
+        <div>
+          <button type="button" data-id="${invoiceId}" class="btn-view">عرض</button>
+          <button type="button" data-id="${invoiceId}" class="btn-print">طباعة</button>
+          <button type="button" data-id="${invoiceId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+    // Ensure a single click handler is attached
+    container.onclick = async (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      if (!id) return;
+      if (btn.classList.contains('btn-print')) {
+        try { await window.api.print.invoice(id); showErrorMessage('تم إرسال الفاتورة للطباعة', 'success'); } catch (error) { showErrorMessage('خطأ في الطباعة: ' + error.message); }
+      } else if (btn.classList.contains('btn-archive')) {
+        try {
+          const invoices = await window.api.invoices.list({});
+          const inv = invoices.find(x => {
+            let xId = x._id;
+            if (typeof xId === 'object' && xId.buffer) xId = Array.from(xId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+            else if (typeof xId === 'object' && xId.toString) xId = xId.toString();
+            return String(xId) === String(id);
+          });
+          if (inv) {
+            await window.api.invoices.archive(String(id), !inv.archived);
+            await displayInvoicesWithFilters(filters);
+            showErrorMessage(inv.archived ? 'تم إلغاء الأرشفة' : 'تم الأرشفة', 'success');
+          }
+        } catch (error) {
+          showErrorMessage('خطأ في الأرشفة: ' + error.message);
+        }
+      } else if (btn.classList.contains('btn-view')) {
+        try {
+          await showInvoiceDetail(id);
+          const invoicesTab = $$('.tab').find(t => t.getAttribute('data-tab') === 'invoices');
+          if (invoicesTab) invoicesTab.click();
+        } catch (error) {
+          showErrorMessage('خطأ في عرض الفاتورة: ' + error.message);
+        }
+      }
+    };
+  } catch (error) {
+    const container = $('#search-results');
+    if (container) container.innerHTML = '<div class="muted" style="color: red;">خطأ في تحميل النتائج</div>';
+  }
+}
 // Ensure Gregorian date formatting regardless of locale default calendar
 function formatGregorian(date, withTime = false) {
   try {
@@ -164,7 +292,7 @@ function newItemRow() {
         <div class="suggestions" style="display:none"></div>
       </div>
     </td>
-    <td><input type="number" class="item-qty" placeholder="الكمية" value="1" step="1" min="0" /></td>
+    <td><input type="number" class="item-qty" placeholder="الكمية" value="1" step="0.01" min="0" /></td>
     <td><input type="number" class="item-price" placeholder="سعر البيع" step="0.01" min="0" /></td>
     <td class="item-subtotal" style="text-align:center">0.00</td>
     <td><button type="button" class="remove-item">✕</button></td>
@@ -264,7 +392,7 @@ function recomputeTotals() {
   let paid = 0;
   $$('#payments-body tr').forEach(tr => { paid += Number(tr.querySelector('.pay-amount').value || 0); });
   $('#total').textContent = currency(total);
-  $('#remaining').textContent = currency(Math.max(0, total - paid));
+  $('#remaining').textContent = currency(total - paid);
 }
 
 $('#invoice-form').addEventListener('input', recomputeTotals);
@@ -407,8 +535,8 @@ async function showInvoiceDetail(id) {
   
     // Calculate totals
     const itemsTotal = (inv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
-    const paidTotal = (inv.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
-    const remaining = Math.max(0, itemsTotal - paidTotal);
+    const allPayments = (inv.payments || []);
+    const paidTotal = allPayments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
     
     // Normalize IDs: numeric external id = invoiceNumber; internal ObjectId kept for backend
     const invoiceNumberExt = inv.invoiceNumber;
@@ -460,6 +588,7 @@ async function showInvoiceDetail(id) {
       </tr>`;
     }).join('') : '';
     const returnTotal = hasReturn ? (inv.returnInvoice.items || []).reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0) : 0;
+    const remaining = Number((itemsTotal - (paidTotal + returnTotal)).toFixed(2));
     
     // Discount info
     const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
@@ -516,7 +645,7 @@ async function showInvoiceDetail(id) {
       <div style="margin:16px 0; padding:12px; background:#f0fdf4; border-radius:4px;">
         <h5>إضافة دفعة جديدة</h5>
         <div class="row" style="gap:8px; align-items:end;">
-        <input type="number" id="new-payment-amount" placeholder="المبلغ" step="0.01" min="0" style="width:120px" />
+        <input type="text" id="new-payment-amount" placeholder="المبلغ" inputmode="decimal" pattern="[0-9٠-٩\.,٫٬]*" dir="ltr" style="width:120px" />
         <input type="date" id="new-payment-date" style="width:140px" />
         <input type="text" id="new-payment-note" placeholder="ملاحظة" style="width:200px" />
         <button type="button" id="add-payment-btn" data-invoice-id="${invoiceNumberExt ?? idStr}">إضافة دفعة</button>
@@ -593,7 +722,14 @@ async function showInvoiceDetail(id) {
     }
   });
   $('#add-payment-btn').addEventListener('click', async () => {
-    const amount = Number($('#new-payment-amount').value || 0);
+    // Normalize Arabic-Indic digits and separators to parseable number
+    const rawAmt = ($('#new-payment-amount').value || '').trim();
+    const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+    const normalizedDigits = rawAmt.replace(/[٠-٩]/g, d => String(arabicDigits.indexOf(d)))
+                                   .replace(/[٬,]/g, '') // remove thousand separators
+                                   .replace(/[٫]/g, '.') // decimal separator to dot
+                                   .replace(/\s+/g, '');
+    const amount = Number(normalizedDigits || 0);
     const date = $('#new-payment-date').value || new Date().toISOString().split('T')[0];
     const note = $('#new-payment-note').value || '';
     
@@ -669,7 +805,7 @@ function buildReturnForm(inv) {
           <div class="suggestions" style="display:none"></div>
         </div>
       </td>
-      <td><input type="number" class="ret-qty" placeholder="الكمية" value="1" step="1" min="0" /></td>
+      <td><input type="number" class="ret-qty" placeholder="الكمية" value="1" step="0.01" min="0" /></td>
       <td><input type="number" class="ret-price" placeholder="السعر" step="0.01" min="0" /></td>
       <td><button type="button" class="ret-remove">✕</button></td>
     `;
@@ -679,22 +815,54 @@ function buildReturnForm(inv) {
     const sugg = tr.querySelector('.suggestions');
     let selected = null; // { id, name, price }
 
-    nameInput.addEventListener('input', async () => {
-      const q = nameInput.value.trim();
-      if (!q) { sugg.style.display='none'; sugg.innerHTML=''; selected=null; return; }
-      const list = await window.api.products.search(q);
+    function applySelection(sel) {
+      selected = { id: sel.id, name: sel.name, price: Number(sel.price || 0) };
+      nameInput.value = sel.name;
+      priceInput.value = Number(selected.price || 0).toFixed(2);
+      sugg.style.display = 'none';
+      recomputeReturnTotal();
+    }
+
+    function updateSuggestionsAndMaybeAutofill() {
+      const q = nameInput.value.trim().toLowerCase();
+      const src = (inv.items || []).map(it => ({
+        id: (it.product && it.product._id) ? it.product._id : (it.product || it.productId || it._id),
+        name: (it.product && it.product.name) ? it.product.name : (it.productName || ''),
+        price: (it.discountedPrice ?? it.price) // effective (after discount)
+      }));
+      const list = q ? src.filter(p => String(p.name || '').toLowerCase().includes(q)) : src;
       if (!list.length) { sugg.style.display='none'; sugg.innerHTML=''; selected=null; return; }
-      sugg.innerHTML = list.map(p => `<div data-id="${p._id || p.id}" data-name="${p.name}" data-price="${p.sellingPrice ?? p.price}">${p.name} — ${currency(p.sellingPrice ?? p.price)}</div>`).join('');
+      sugg.innerHTML = list.map(p => `<div data-id="${p.id}" data-name="${p.name}" data-price="${p.price}">${p.name} — ${currency(p.price)}</div>`).join('');
       sugg.style.display = 'block';
+
+      // If the typed name exactly matches one item, auto-select it and fill discounted price
+      if (q) {
+        const exact = src.find(p => String(p.name || '').trim().toLowerCase() === q);
+        if (exact) {
+          applySelection(exact);
+          return;
+        }
+      }
+
+      // If only one suggestion remains, auto-select it
+      if (list.length === 1) {
+        applySelection(list[0]);
+        return;
+      }
+    }
+
+    nameInput.addEventListener('input', updateSuggestionsAndMaybeAutofill);
+    nameInput.addEventListener('blur', updateSuggestionsAndMaybeAutofill);
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        updateSuggestionsAndMaybeAutofill();
+      }
     });
     sugg.addEventListener('click', (e) => {
       const d = e.target.closest('div');
       if (!d) return;
-      selected = { id: d.getAttribute('data-id'), name: d.getAttribute('data-name'), price: Number(d.getAttribute('data-price')) };
-      nameInput.value = selected.name;
-      priceInput.value = Number(selected.price || 0).toFixed(2);
-      sugg.style.display = 'none';
-      recomputeReturnTotal();
+      applySelection({ id: d.getAttribute('data-id'), name: d.getAttribute('data-name'), price: Number(d.getAttribute('data-price')) });
     });
     tr.querySelector('.ret-remove').addEventListener('click', () => { tr.remove(); recomputeReturnTotal(); });
     qtyInput.addEventListener('input', recomputeReturnTotal);
@@ -742,7 +910,7 @@ async function loadInvoices() {
   const search = $('#invoice-search')?.value?.trim() || '';
   const filter = $('#archive-filter')?.value || 'active';
   const filters = {};
-  if (search) filters.search = search;
+  if (search) filters.search = normalizeDigits(search);
   if (filter === 'active') filters.archived = false;
   if (filter === 'archived') filters.archived = true;
   
@@ -784,9 +952,6 @@ async function loadInvoices() {
       }
       const externalId = (Number.isFinite(Number(invoiceNumberExt)) ? String(invoiceNumberExt) : internalId);
       if (!externalId) { console.error('❌ Missing invoice identifier', inv); return; }
-      const revenue = (inv.items || []).reduce((s, it) => s + it.qty * (it.discountedPrice ?? it.price), 0);
-      const cost = (inv.items || []).reduce((s, it) => s + it.qty * (it.buyingPrice ?? 0), 0);
-      const profit = revenue - cost;
       const card = document.createElement('div');
       card.className = 'list-card';
       const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
@@ -799,7 +964,7 @@ async function loadInvoices() {
           <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
           <div class="muted">تاريخ الإنشاء: ${formatGregorian(inv.createdAt, true)} | آخر تحديث: ${formatGregorian(inv.updatedAt, true)}</div>
           <div class="muted">رقم الفاتورة: ${invoiceNumberExt ?? '—'} | رقم الفاتورة: ${internalId}</div>
-          <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)} | المرتجع: ${currency(returnTotal)} | الربح: ${currency(profit)}</div>
+          <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)} | المرتجع: ${currency(returnTotal)}</div>
         </div>
         <div>
           <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
@@ -824,6 +989,10 @@ async function loadInvoices() {
 $('#refresh-invoices').addEventListener('click', loadInvoices);
 $('#archive-filter').addEventListener('change', loadInvoices);
 $('#invoice-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadInvoices(); });
+// Live search invoices as the user types (debounced)
+$('#invoice-search')?.addEventListener('input', debounce(() => {
+  loadInvoices();
+}, 250));
 
 // Invoice list button handlers
 $('#invoice-list').addEventListener('click', async (e) => {
@@ -921,9 +1090,27 @@ function debounce(fn, delay) {
   };
 }
 
+// Utility: normalize Arabic-Indic digits to ASCII for reliable numeric searches
+function normalizeDigits(str) {
+  if (!str) return '';
+  const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+  return String(str)
+    .replace(/[٠-٩]/g, d => String(arabicDigits.indexOf(d)))
+    .replace(/[٬,]/g, '') // remove thousand separators
+    .replace(/[٫]/g, '.') // normalize decimal separator
+    .trim();
+}
+
 // Product page: live search and edit/delete per row
 $('#product-search-btn')?.addEventListener('click', async () => {
   const q = $('#product-search').value.trim();
+  const list = q ? await window.api.products.search(q) : await window.api.products.list();
+  renderProductList(list);
+});
+
+// Refresh products list (respects current search query if present)
+$('#refresh-products')?.addEventListener('click', async () => {
+  const q = $('#product-search')?.value.trim();
   const list = q ? await window.api.products.search(q) : await window.api.products.list();
   renderProductList(list);
 });
@@ -940,7 +1127,7 @@ function mountProductRow(product) {
 
   function setViewMode(p) {
     row.innerHTML = `
-      <div><strong>${p.name}</strong> — [${p.category || '—'}] — شراء ${currency(p.buyingPrice ?? 0)} | بيع ${currency(p.sellingPrice ?? p.price ?? 0)} | ربح/وحدة ${currency((p.sellingPrice ?? p.price ?? 0) - (p.buyingPrice ?? 0))} | مخزون: ${p.stock}</div>
+      <div><strong>${p.name}</strong> — [${p.category || '—'}] — شراء ${currency(p.buyingPrice ?? 0)} | بيع ${currency(p.sellingPrice ?? p.price ?? 0)} | مخزون: ${p.stock}</div>
       <div>
         <button type="button" data-id="${p._id}" class="btn-edit">تعديل</button>
         <button type="button" data-id="${p._id}" class="btn-delete">حذف</button>
@@ -1050,6 +1237,16 @@ if (refreshPeopleBtn) {
   });
 }
 
+function normalizeObjId(id) {
+  if (!id) return '';
+  if (typeof id === 'string') return id;
+  if (typeof id === 'object' && id.buffer) {
+    return Array.from(id.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  if (typeof id === 'object' && id.toString) return id.toString();
+  return String(id);
+}
+
 async function loadCustomers() {
   const list = await window.api.customers.list();
   const container = $('#customer-list');
@@ -1058,9 +1255,64 @@ async function loadCustomers() {
   list.forEach(c => {
     const row = document.createElement('div');
     row.className = 'list-card';
-    row.textContent = `${c.name} — ${c.phone}`;
+    const cid = normalizeObjId(c._id);
+    row.innerHTML = `
+      <div>
+        <strong>${c.name}</strong> — ${c.phone}
+      </div>
+      <div>
+        <button type="button" class="btn-view-bills" data-id="${cid}">فواتير</button>
+        <button type="button" class="btn-edit" data-id="${cid}" data-name="${c.name}" data-phone="${c.phone}">تعديل</button>
+        <button type="button" class="btn-delete" data-id="${cid}">حذف</button>
+      </div>
+    `;
     container.appendChild(row);
   });
+
+  // Click actions
+  container.onclick = async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const id = btn.getAttribute('data-id');
+    if (btn.classList.contains('btn-view-bills')) {
+      const si = $('#search-input');
+      if (si) si.value = '';
+      // Defer filtered rendering to the search tab auto-loader
+      window.pendingExplicitSearchFilters = { customerId: id };
+      // Switch to search tab to show results
+      const tab = $$('.tab').find(t => t.getAttribute('data-tab') === 'search');
+      if (tab) tab.click();
+    } else if (btn.classList.contains('btn-edit')) {
+      const curName = btn.getAttribute('data-name') || '';
+      const curPhone = btn.getAttribute('data-phone') || '';
+      const result = await openEditPersonModal({ title: 'تعديل العميل', name: curName, phone: curPhone, requirePhone: true });
+      if (!result) return;
+      try {
+        const res = await window.api.customers.update(id, { name: result.name, phone: result.phone });
+        if (res && !res.error) {
+          showErrorMessage('تم التعديل', 'success');
+          await loadCustomers();
+        } else {
+          showErrorMessage('تعذر التعديل: ' + (res?.message || '')); 
+        }
+      } catch (err) {
+        showErrorMessage('خطأ في التعديل: ' + err.message);
+      }
+    } else if (btn.classList.contains('btn-delete')) {
+      if (!confirm('حذف هذا العميل؟ سيبقى سجل الفواتير مرتبطاً بالمعرف.')) return;
+      try {
+        const res = await window.api.customers.delete(id);
+        if (res && !res.error) {
+          showErrorMessage('تم الحذف', 'success');
+          await loadCustomers();
+        } else {
+          showErrorMessage('تعذر الحذف: ' + (res?.message || ''));
+        }
+      } catch (err) {
+        showErrorMessage('خطأ في الحذف: ' + err.message);
+      }
+    }
+  };
 }
 
 async function loadPlumbers() {
@@ -1071,17 +1323,73 @@ async function loadPlumbers() {
   list.forEach(p => {
     const row = document.createElement('div');
     row.className = 'list-card';
-    row.textContent = `${p.name}${p.phone ? ' — ' + p.phone : ''}`;
+    const pid = normalizeObjId(p._id);
+    row.innerHTML = `
+      <div>
+        <strong>${p.name}</strong>${p.phone ? ' — ' + p.phone : ''}
+      </div>
+      <div>
+        <button type="button" class="btn-view-bills" data-name="${p.name}">فواتير</button>
+        <button type="button" class="btn-edit" data-id="${pid}" data-name="${p.name}" data-phone="${p.phone || ''}">تعديل</button>
+        <button type="button" class="btn-delete" data-id="${pid}">حذف</button>
+      </div>
+    `;
     container.appendChild(row);
   });
+
+  container.onclick = async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.classList.contains('btn-view-bills')) {
+      const name = btn.getAttribute('data-name') || '';
+      const si = $('#search-input');
+      if (si) si.value = '';
+      // Defer filtered rendering to the search tab auto-loader
+      window.pendingExplicitSearchFilters = { plumberName: name };
+      const tab = $$('.tab').find(t => t.getAttribute('data-tab') === 'search');
+      if (tab) tab.click();
+    } else if (btn.classList.contains('btn-edit')) {
+      const id = btn.getAttribute('data-id');
+      const curName = btn.getAttribute('data-name') || '';
+      const curPhone = btn.getAttribute('data-phone') || '';
+      const result = await openEditPersonModal({ title: 'تعديل السباك', name: curName, phone: curPhone, requirePhone: false });
+      if (!result) return;
+      try {
+        const res = await window.api.plumbers.update(id, { name: result.name, phone: result.phone });
+        if (res && !res.error) {
+          showErrorMessage('تم التعديل', 'success');
+          await loadPlumbers();
+        } else {
+          showErrorMessage('تعذر التعديل: ' + (res?.message || ''));
+        }
+      } catch (err) {
+        showErrorMessage('خطأ في التعديل: ' + err.message);
+      }
+    } else if (btn.classList.contains('btn-delete')) {
+      const id = btn.getAttribute('data-id');
+      if (!confirm('حذف هذا السباك؟')) return;
+      try {
+        const res = await window.api.plumbers.delete(id);
+        if (res && !res.error) {
+          showErrorMessage('تم الحذف', 'success');
+          await loadPlumbers();
+        } else {
+          showErrorMessage('تعذر الحذف: ' + (res?.message || ''));
+        }
+      } catch (err) {
+        showErrorMessage('خطأ في الحذف: ' + err.message);
+      }
+    }
+  };
 }
 
 // Search page functionality
 async function displaySearchResults(searchTerm = '') {
   try {
     const filters = {};
-    if (searchTerm) {
-      filters.search = searchTerm;
+    const term = normalizeDigits(searchTerm || '');
+    if (term) {
+      filters.search = term;
     }
     
     const list = await window.api.invoices.list(filters);
@@ -1114,9 +1422,6 @@ async function displaySearchResults(searchTerm = '') {
         console.error('❌ Invalid invoice _id:', invoiceId, inv);
         return;
       }
-      const revenue = (inv.items || []).reduce((s, it) => s + it.qty * (it.discountedPrice ?? it.price), 0);
-      const cost = (inv.items || []).reduce((s, it) => s + it.qty * (it.buyingPrice ?? 0), 0);
-      const profit = revenue - cost;
       
       const card = document.createElement('div');
       card.className = 'list-card';
@@ -1130,7 +1435,7 @@ async function displaySearchResults(searchTerm = '') {
           <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
           <div class="muted">تاريخ الإنشاء: ${new Date(inv.createdAt).toLocaleString()} | آخر تحديث: ${new Date(inv.updatedAt).toLocaleString()}</div>
           <div class="muted">رقم الفاتورة: ${inv.invoiceNumber ?? '—'} | ID: ${invoiceId}</div>
-          <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)} | الربح: ${currency(profit)}</div>
+          <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)}</div>
         </div>
         <div>
           <button type="button" data-id="${invoiceId}" class="btn-view">عرض</button>
@@ -1218,7 +1523,7 @@ const searchBtn = $('#search-btn');
 if (searchBtn) {
   searchBtn.addEventListener('click', async () => {
     try {
-      const searchTerm = $('#search-input').value.trim();
+      const searchTerm = normalizeDigits($('#search-input').value.trim());
       console.log('Search button clicked with term:', searchTerm);
       await displaySearchResults(searchTerm);
       
@@ -1260,6 +1565,11 @@ if (searchInput) {
       }
     }
   });
+  // Live search on search tab as user types (debounced)
+  searchInput.addEventListener('input', debounce((e) => {
+    const term = normalizeDigits(e.target.value.trim());
+    displaySearchResults(term);
+  }, 250));
 }
 
 // Load all invoices when search tab is opened
@@ -1268,7 +1578,16 @@ $$('.tab').forEach(tab => {
     tab.addEventListener('click', async () => {
       // Small delay to ensure tab is active
       setTimeout(async () => {
-        await displaySearchResults('');
+        const pending = window.pendingExplicitSearchFilters;
+        if (pending) {
+          try {
+            await displayInvoicesWithFilters(pending);
+          } finally {
+            window.pendingExplicitSearchFilters = null;
+          }
+        } else {
+          await displaySearchResults('');
+        }
       }, 100);
     });
   }
