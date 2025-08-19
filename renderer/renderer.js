@@ -3,6 +3,92 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 function currency(n) { return (Number(n || 0)).toFixed(2); }
 
+// Ensure Gregorian date formatting regardless of locale default calendar
+function formatGregorian(date, withTime = false) {
+  try {
+    const d = new Date(date);
+    const opts = withTime
+      ? { calendar: 'gregory', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }
+      : { calendar: 'gregory', year: 'numeric', month: '2-digit', day: '2-digit' };
+    // Use Arabic numerals/labels but force Gregorian calendar
+    return new Intl.DateTimeFormat('ar-EG-u-ca-gregory', opts).format(d);
+  } catch (e) {
+    // Fallback to ISO-like
+    const d = new Date(date);
+    const iso = d.toISOString();
+    return withTime ? iso.replace('T', ' ').slice(0, 16) : iso.slice(0, 10);
+  }
+}
+
+// Global error handler for the renderer process
+window.addEventListener('error', (event) => {
+  console.error('❌ Global error:', event.error);
+  console.error('Stack trace:', event.error?.stack);
+  showErrorMessage(`خطأ في التطبيق: ${event.error?.message || 'خطأ غير معروف'}`);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('❌ Unhandled promise rejection:', event.reason);
+  showErrorMessage(`خطأ في العملية: ${event.reason?.message || event.reason || 'خطأ غير معروف'}`);
+});
+
+// Enhanced error display function
+function showErrorMessage(message, type = 'error') {
+  console.log(`${type === 'error' ? '❌' : '✅'} ${message}`);
+  
+  // Create or update error display element
+  let errorDiv = $('#global-error-display');
+  if (!errorDiv) {
+    errorDiv = document.createElement('div');
+    errorDiv.id = 'global-error-display';
+    errorDiv.style.cssText = `
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      max-width: 400px;
+      padding: 12px;
+      border-radius: 6px;
+      z-index: 10000;
+      font-weight: bold;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    `;
+    document.body.appendChild(errorDiv);
+  }
+  
+  errorDiv.style.backgroundColor = type === 'error' ? '#fee2e2' : '#dcfce7';
+  errorDiv.style.color = type === 'error' ? '#dc2626' : '#16a34a';
+  errorDiv.style.border = type === 'error' ? '1px solid #fca5a5' : '1px solid #86efac';
+  errorDiv.textContent = message;
+  errorDiv.style.display = 'block';
+  
+  // Auto-hide after 5 seconds
+  setTimeout(() => {
+    if (errorDiv) {
+      errorDiv.style.display = 'none';
+    }
+  }, 5000);
+}
+
+// Enhanced API call wrapper with error handling
+async function safeApiCall(apiCall, errorContext = '') {
+  try {
+    console.log(`🔄 API Call: ${errorContext}`);
+    const result = await apiCall();
+    
+    // Check if result contains error
+    if (result && result.error) {
+      throw new Error(result.message || 'API returned error');
+    }
+    
+    console.log(`✅ API Success: ${errorContext}`);
+    return result;
+  } catch (error) {
+    console.error(`❌ API Error in ${errorContext}:`, error);
+    showErrorMessage(`خطأ في ${errorContext}: ${error.message}`);
+    throw error;
+  }
+}
+
 // Tabs
 $$('.tab').forEach(btn => btn.addEventListener('click', () => {
   $$('.tab').forEach(b => b.classList.remove('active'));
@@ -224,9 +310,10 @@ $('#invoice-form').addEventListener('submit', async (e) => {
     
     // Switch to invoices tab to show the new invoice
     $$('.tab').forEach(b => b.classList.remove('active'));
-    $('[data-tab="invoices"]').classList.add('active');
     $$('.page').forEach(p => p.classList.remove('active'));
     $('#invoices').classList.add('active');
+    const invoicesTab = $$('.tab').find(t => t.getAttribute('data-tab') === 'invoices');
+    if (invoicesTab) invoicesTab.classList.add('active');
     
     // Clear success message after 3 seconds
     setTimeout(() => {
@@ -288,14 +375,33 @@ if (livePlumberSearch) {
 
 // Invoice list: view detail and create return invoice preserving sold prices
 async function showInvoiceDetail(id) {
-  console.log('showInvoiceDetail called with id:', id, typeof id);
+  console.log('=== SHOW INVOICE DETAIL DEBUG ===');
+  console.log('showInvoiceDetail called with id:', id, 'type:', typeof id);
+  
+  // Check if window.api is available
+  if (!window.api) {
+    console.error('❌ window.api is not available!');
+    showErrorMessage('خطأ: واجهة التطبيق غير متاحة');
+    return;
+  }
+  
   try {
+    console.log('Calling window.api.invoices.getById...');
     const inv = await window.api.invoices.getById(id);
     console.log('Invoice data received:', inv);
     const panel = $('#invoice-detail');
+    console.log('Detail panel element:', panel);
+    
+    if (!panel) {
+      console.error('❌ Detail panel element not found!');
+      showErrorMessage('خطأ: لم يتم العثور على لوحة التفاصيل');
+      return;
+    }
+    
     if (!inv) { 
-      console.log('No invoice found, hiding panel');
-      panel.style.display='none'; 
+      console.log('❌ No invoice found, hiding panel');
+      panel.style.display='none';
+      showErrorMessage('لم يتم العثور على الفاتورة');
       return; 
     }
   
@@ -304,9 +410,19 @@ async function showInvoiceDetail(id) {
     const paidTotal = (inv.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
     const remaining = Math.max(0, itemsTotal - paidTotal);
     
-    // Format dates
-    const createdDate = new Date(inv.createdAt).toLocaleDateString('ar-SA');
-    const updatedDate = new Date(inv.updatedAt).toLocaleDateString('ar-SA');
+    // Normalize IDs: numeric external id = invoiceNumber; internal ObjectId kept for backend
+    const invoiceNumberExt = inv.invoiceNumber;
+    // Normalize ID and format dates (Gregorian)
+    let idStr = inv._id;
+    if (typeof idStr === 'object' && idStr?.buffer) {
+      idStr = Array.from(idStr.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+    } else if (typeof idStr === 'object' && idStr?.toString) {
+      idStr = idStr.toString();
+    } else {
+      idStr = String(idStr);
+    }
+    const createdDate = formatGregorian(inv.createdAt, false);
+    const updatedDate = formatGregorian(inv.updatedAt, false);
     
     // Items table
     const itemsRows = (inv.items || []).map(it => {
@@ -323,7 +439,7 @@ async function showInvoiceDetail(id) {
     
     // Payments table
     const paymentsRows = (inv.payments || []).map(p => {
-      const paymentDate = new Date(p.date).toLocaleDateString('ar-SA');
+      const paymentDate = formatGregorian(p.date, false);
       return `<tr>
         <td>${paymentDate}</td>
         <td>${p.note || ''}</td>
@@ -331,6 +447,19 @@ async function showInvoiceDetail(id) {
         <td><button type="button" class="remove-payment-btn" data-payment-id="${p._id || 'temp'}">حذف</button></td>
       </tr>`;
     }).join('');
+
+    // Return section (if any)
+    const hasReturn = !!inv.returnInvoice;
+    const returnRows = hasReturn ? (inv.returnInvoice.items || []).map(ri => {
+      const t = Number(ri.qty || 0) * Number(ri.price || 0);
+      return `<tr>
+        <td>${ri.productName || ri.product || ''}</td>
+        <td>${ri.qty || 0}</td>
+        <td>${Number(ri.price || 0).toFixed(2)}</td>
+        <td>${t.toFixed(2)}</td>
+      </tr>`;
+    }).join('') : '';
+    const returnTotal = hasReturn ? (inv.returnInvoice.items || []).reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0) : 0;
     
     // Discount info
     const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
@@ -339,8 +468,9 @@ async function showInvoiceDetail(id) {
          </div>`
       : '';
     
+    const shortId = (idStr && typeof idStr === 'string') ? idStr.slice(-6) : '';
     panel.innerHTML = `
-      <h3>تفاصيل الفاتورة</h3>
+      <h3>تفاصيل الفاتورة #${invoiceNumberExt || shortId || 'غير محدد'}</h3>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px;">
         <div>
           <div><strong>العميل:</strong> ${inv.customer?.name || ''}</div>
@@ -351,25 +481,34 @@ async function showInvoiceDetail(id) {
           <div><strong>تاريخ الإنشاء:</strong> ${createdDate}</div>
           <div><strong>آخر تحديث:</strong> ${updatedDate}</div>
           <div><strong>الحالة:</strong> ${inv.archived ? 'مؤرشف' : 'نشط'}</div>
+          <div><strong>رقم الفاتورة:</strong> ${invoiceNumberExt ?? '—'}</div>
+          <div><strong>رقم الفاتورة:</strong> ${idStr}</div>
         </div>
       </div>
       
       ${discountInfo}
       
       <h4>الأصناف</h4>
-      <table class="items-table" style="margin-top:8px">
+      <table class="items-table inv-items" style="margin-top:8px">
         <thead><tr><th>الصنف</th><th>الفئة</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead>
         <tbody>${itemsRows}</tbody>
       </table>
       
-      <div style="margin:16px 0; padding:12px; background:#f8fafc; border-radius:4px;">
-        <div><strong>إجمالي الأصناف:</strong> ${itemsTotal.toFixed(2)}</div>
-        <div><strong>إجمالي المدفوع:</strong> ${paidTotal.toFixed(2)}</div>
-        <div><strong>المتبقي:</strong> <span style="color:${remaining > 0 ? '#dc2626' : '#16a34a'}">${remaining.toFixed(2)}</span></div>
-      </div>
       
+      
+      ${hasReturn ? `
+      <div style="margin-top:16px"></div>
+      <h4>المرتجع</h4>
+      <div class="muted">التاريخ: ${formatGregorian(inv.returnInvoice.createdAt, true)}</div>
+      <table class="items-table inv-returns" style="margin-top:8px">
+        <thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
+        <tbody>${returnRows}</tbody>
+      </table>
+      <div style="margin-top:8px"><strong>إجمالي المرتجع:</strong> ${returnTotal.toFixed(2)}</div>
+      ` : ''}
+
       <h4>المدفوعات</h4>
-      <table class="items-table" style="margin-top:8px">
+      <table class="items-table inv-payments" style="margin-top:8px">
         <thead><tr><th>التاريخ</th><th>ملاحظة</th><th>المبلغ</th><th></th></tr></thead>
         <tbody>${paymentsRows}</tbody>
       </table>
@@ -380,30 +519,78 @@ async function showInvoiceDetail(id) {
         <input type="number" id="new-payment-amount" placeholder="المبلغ" step="0.01" min="0" style="width:120px" />
         <input type="date" id="new-payment-date" style="width:140px" />
         <input type="text" id="new-payment-note" placeholder="ملاحظة" style="width:200px" />
-        <button type="button" id="add-payment-btn" data-invoice-id="${inv._id}">إضافة دفعة</button>
+        <button type="button" id="add-payment-btn" data-invoice-id="${invoiceNumberExt ?? idStr}">إضافة دفعة</button>
       </div>
     </div>
     
-    <div class="row" style="margin-top:16px; gap:8px;">
-      <button id="btn-make-return" data-id="${inv._id}">إنشاء فاتورة مرتجع</button>
-      <button id="btn-print-invoice" data-id="${inv._id}">طباعة الفاتورة</button>
-      <button id="btn-archive-invoice" data-id="${inv._id}" style="background-color:${inv.archived ? '#16a34a' : '#dc2626'}">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
+    <div style="margin:16px 0">
+      <div style="display:grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap:12px;">
+        <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:8px; padding:12px; box-shadow:0 1px 2px rgba(0,0,0,0.04)">
+          <div style="font-size:12px; color:#6b7280; margin-bottom:6px">إجمالي الأصناف</div>
+          <div style="font-size:20px; font-weight:700; color:#111827">${itemsTotal.toFixed(2)}</div>
+        </div>
+        <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:8px; padding:12px; box-shadow:0 1px 2px rgba(0,0,0,0.04)">
+          <div style="font-size:12px; color:#6b7280; margin-bottom:6px">إجمالي المدفوع</div>
+          <div style="font-size:20px; font-weight:700; color:#111827">${paidTotal.toFixed(2)}</div>
+        </div>
+        <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:8px; padding:12px; box-shadow:0 1px 2px rgba(0,0,0,0.04)">
+          <div style="font-size:12px; color:#6b7280; margin-bottom:6px">إجمالي المرتجع</div>
+          <div style="font-size:20px; font-weight:700; color:#111827">${returnTotal.toFixed(2)}</div>
+        </div>
+        <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:8px; padding:12px; box-shadow:0 1px 2px rgba(0,0,0,0.04)">
+          <div style="font-size:12px; color:#6b7280; margin-bottom:6px">المتبقي</div>
+          <div style="font-size:20px; font-weight:700; color:${remaining > 0 ? '#dc2626' : '#16a34a'}">${remaining.toFixed(2)}</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="invoice-actions">
+      <button id="btn-edit-invoice" data-id="${invoiceNumberExt ?? idStr}">تعديل الفاتورة</button>
+      <button id="btn-make-return" data-id="${invoiceNumberExt ?? idStr}">إرجاع</button>
+      <button id="btn-print-invoice" data-id="${invoiceNumberExt ?? idStr}">طباعة الفاتورة</button>
+      <button id="btn-archive-invoice" data-id="${invoiceNumberExt ?? idStr}" style="background-color:${inv.archived ? '#16a34a' : '#dc2626'}">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
+      <button id="btn-delete-invoice" data-id="${invoiceNumberExt ?? idStr}" style="background-color:#dc2626; color:#fff">حذف الفاتورة</button>
     </div>
     
     <div id="return-form" style="display:none; margin-top:16px"></div>
   `;
   
   panel.style.display = 'block';
+  // Ensure the invoice detail is shown at the top of the viewport
+  try {
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Fallback to window scroll in case the container handles scrolling
+    setTimeout(() => { try { window.scrollTo({ top: panel.offsetTop || 0, behavior: 'smooth' }); } catch (_) {} }, 0);
+  } catch (_) {}
   
   // Add event listeners
+  $('#btn-edit-invoice').addEventListener('click', async () => {
+    await showEditInvoiceForm(invoiceNumberExt ?? idStr);
+  });
   $('#btn-make-return').addEventListener('click', () => buildReturnForm(inv));
   $('#btn-print-invoice').addEventListener('click', async () => {
-    await window.api.print.invoice(inv._id);
+    await window.api.print.invoice(invoiceNumberExt ?? idStr);
   });
   $('#btn-archive-invoice').addEventListener('click', async () => {
-    await window.api.invoices.archive(inv._id, !inv.archived);
-    await loadInvoices(); // Refresh the list
-    await showInvoiceDetail(inv._id); // Refresh the detail view
+    await window.api.invoices.archive(invoiceNumberExt ?? idStr, !inv.archived);
+    await loadInvoices();
+    await showInvoiceDetail(invoiceNumberExt ?? idStr);
+  });
+  $('#btn-delete-invoice').addEventListener('click', async () => {
+    const externalId = invoiceNumberExt ?? idStr;
+    const ok = confirm('هل أنت متأكد من حذف هذه الفاتورة؟ هذا الإجراء لا يمكن التراجع عنه.');
+    if (!ok) return;
+    try {
+      const res = await window.api.invoices.delete(externalId);
+      if (res && res.error) { alert('فشل حذف الفاتورة: ' + (res.message || '')); return; }
+      // Refresh list and clear detail panel
+      await loadInvoices();
+      const panel = $('#invoice-detail');
+      if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+      showErrorMessage('تم حذف الفاتورة بنجاح', 'success');
+    } catch (e) {
+      alert('خطأ في حذف الفاتورة: ' + (e.message || ''));
+    }
   });
   $('#add-payment-btn').addEventListener('click', async () => {
     const amount = Number($('#new-payment-amount').value || 0);
@@ -416,9 +603,9 @@ async function showInvoiceDetail(id) {
     }
     
     try {
-      await window.api.invoices.addPayment(inv._id, { amount, date, note });
+      await window.api.invoices.addPayment(invoiceNumberExt ?? idStr, { amount, date, note });
       // Refresh the detail view to show the new payment
-      await showInvoiceDetail(inv._id);
+      await showInvoiceDetail(invoiceNumberExt ?? idStr);
       // Clear the form
       $('#new-payment-amount').value = '';
       $('#new-payment-date').value = '';
@@ -437,97 +624,194 @@ async function showInvoiceDetail(id) {
   });
   
   } catch (error) {
-    console.error('Error showing invoice detail:', error);
+    console.error('❌ Error showing invoice detail:', error);
     const panel = $('#invoice-detail');
     panel.innerHTML = `<div style="color: red; padding: 20px;">خطأ في عرض تفاصيل الفاتورة: ${error.message}</div>`;
     panel.style.display = 'block';
   }
+  console.log('=== END SHOW INVOICE DETAIL DEBUG ===');
 }
 
 function buildReturnForm(inv) {
   const mount = $('#return-form');
-  const rows = (inv.items || []).map((it, idx) => `
-    <tr>
-      <td>${it.product?.name || ''}</td>
-      <td><input type="number" id="ret-qty-${idx}" min="0" max="${it.qty}" value="0" step="1" /></td>
-      <td><input type="number" id="ret-price-${idx}" step="0.01" value="${it.price.toFixed(2)}" /></td>
-      <td><input type="text" id="ret-reason-${idx}" placeholder="سبب" /></td>
-    </tr>
-  `).join('');
   mount.innerHTML = `
     <h4>إنشاء مرتجع</h4>
-    <table class="items-table"><thead><tr><th>الصنف</th><th>كمية مرتجعة</th><th>سعر البيع (الأصلي)</th><th>السبب</th></tr></thead><tbody>${rows}</tbody></table>
+    <div style="margin-bottom:8px">
+      <button id="add-return-row" type="button">إضافة صنف مرتجع</button>
+    </div>
+    <table class="items-table">
+      <thead>
+        <tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th></th></tr>
+      </thead>
+      <tbody id="return-body"></tbody>
+    </table>
+    <div style="margin-top:8px; text-align:left"><strong>الإجمالي:</strong> <span id="return-total">0.00</span></div>
     <button id="submit-return">حفظ المرتجع</button>
   `;
   mount.style.display = 'block';
+
+  function recomputeReturnTotal() {
+    let total = 0;
+    $$('#return-body tr').forEach(tr => {
+      const qty = Number(tr.querySelector('.ret-qty').value || 0);
+      const price = Number(tr.querySelector('.ret-price').value || 0);
+      total += qty * price;
+    });
+    $('#return-total').textContent = currency(total);
+  }
+
+  function newReturnRow() {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <div class="autocomplete">
+          <input type="text" class="ret-name" placeholder="اسم المنتج" />
+          <div class="suggestions" style="display:none"></div>
+        </div>
+      </td>
+      <td><input type="number" class="ret-qty" placeholder="الكمية" value="1" step="1" min="0" /></td>
+      <td><input type="number" class="ret-price" placeholder="السعر" step="0.01" min="0" /></td>
+      <td><button type="button" class="ret-remove">✕</button></td>
+    `;
+    const nameInput = tr.querySelector('.ret-name');
+    const qtyInput = tr.querySelector('.ret-qty');
+    const priceInput = tr.querySelector('.ret-price');
+    const sugg = tr.querySelector('.suggestions');
+    let selected = null; // { id, name, price }
+
+    nameInput.addEventListener('input', async () => {
+      const q = nameInput.value.trim();
+      if (!q) { sugg.style.display='none'; sugg.innerHTML=''; selected=null; return; }
+      const list = await window.api.products.search(q);
+      if (!list.length) { sugg.style.display='none'; sugg.innerHTML=''; selected=null; return; }
+      sugg.innerHTML = list.map(p => `<div data-id="${p._id || p.id}" data-name="${p.name}" data-price="${p.sellingPrice ?? p.price}">${p.name} — ${currency(p.sellingPrice ?? p.price)}</div>`).join('');
+      sugg.style.display = 'block';
+    });
+    sugg.addEventListener('click', (e) => {
+      const d = e.target.closest('div');
+      if (!d) return;
+      selected = { id: d.getAttribute('data-id'), name: d.getAttribute('data-name'), price: Number(d.getAttribute('data-price')) };
+      nameInput.value = selected.name;
+      priceInput.value = Number(selected.price || 0).toFixed(2);
+      sugg.style.display = 'none';
+      recomputeReturnTotal();
+    });
+    tr.querySelector('.ret-remove').addEventListener('click', () => { tr.remove(); recomputeReturnTotal(); });
+    qtyInput.addEventListener('input', recomputeReturnTotal);
+    priceInput.addEventListener('input', recomputeReturnTotal);
+    tr.getData = () => {
+      const name = nameInput.value.trim() || (selected?.name || '');
+      let id = selected?.id || null;
+      return {
+        product: name, // legacy
+        productName: name,
+        productId: id,
+        qty: Number(qtyInput.value || 0),
+        price: Number(priceInput.value || 0)
+      };
+    };
+    return tr;
+  }
+
+  // Start empty (no auto rows)
+  const body = $('#return-body');
+
+  $('#add-return-row').addEventListener('click', () => { body.appendChild(newReturnRow()); });
+
   $('#submit-return').addEventListener('click', async () => {
-    const items = (inv.items || []).map((it, idx) => ({
-      product: it.product?.name || '',
-      qty: Number($('#ret-qty-' + idx).value || 0),
-      price: Number($('#ret-price-' + idx).value || it.price),
-      reason: $('#ret-reason-' + idx).value
-    })).filter(x => x.qty > 0);
-    if (!items.length) return;
-    await window.api.returns.create({ originalInvoice: inv._id, items });
+    const items = $$('#return-body tr').map(tr => tr.getData()).filter(x => x.product && x.qty > 0);
+    if (!items.length) { showErrorMessage('أضف صنفًا واحدًا على الأقل للمرتجع'); return; }
+    // Prefer numeric invoiceNumber; fallback to normalized _id string
+    let originalInvoice = inv.invoiceNumber ?? inv._id;
+    if (typeof originalInvoice === 'object' && originalInvoice?.buffer) {
+      originalInvoice = Array.from(originalInvoice.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+    } else if (typeof originalInvoice === 'object' && originalInvoice?.toString) {
+      originalInvoice = originalInvoice.toString();
+    }
+    await window.api.returns.create({ originalInvoice, items });
     $('#return-form').style.display = 'none';
+    // Refresh the invoice detail to reflect deduction
+    const externalId = inv.invoiceNumber ?? originalInvoice;
+    await showInvoiceDetail(externalId);
+    showErrorMessage('تم إنشاء المرتجع وخصم المبلغ من الفاتورة', 'success');
   });
 }
 
 async function loadInvoices() {
-  console.log('Loading invoices...');
-  const search = $('#invoice-search').value.trim();
-  const filter = $('#archive-filter').value;
+  console.log('🔄 Loading invoices...');
+  const search = $('#invoice-search')?.value?.trim() || '';
+  const filter = $('#archive-filter')?.value || 'active';
   const filters = {};
   if (search) filters.search = search;
   if (filter === 'active') filters.archived = false;
   if (filter === 'archived') filters.archived = true;
   
+  console.log('📋 Invoice filters:', filters);
+  
   try {
     const list = await window.api.invoices.list(filters);
-    console.log('Invoices loaded:', list.length, list);
+    console.log('✅ Invoices loaded:', list.length);
+    console.log('📊 First invoice sample:', list[0]);
+    
     const container = $('#invoice-list');
     if (!container) {
-      console.error('Invoice list container not found!');
+      console.error('❌ Invoice list container not found!');
+      showErrorMessage('خطأ: لم يتم العثور على حاوية قائمة الفواتير');
       return;
     }
+    
     container.innerHTML = '';
     
     if (list.length === 0) {
-      container.innerHTML = '<div class="muted">لا توجد فواتير</div>';
-      console.log('No invoices found, showing empty message');
+      container.innerHTML = '<div class="muted" style="padding: 20px; text-align: center; background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 8px;">لا توجد فواتير متاحة</div>';
+      console.log('ℹ️ No invoices found, showing empty message');
       return;
     }
     
     console.log('Rendering', list.length, 'invoices');
     
     list.forEach(inv => {
-    const revenue = (inv.items || []).reduce((s, it) => s + it.qty * (it.discountedPrice ?? it.price), 0);
-    const cost = (inv.items || []).reduce((s, it) => s + it.qty * (it.buyingPrice ?? 0), 0);
-    const profit = revenue - cost;
-    const card = document.createElement('div');
-    card.className = 'list-card';
-    const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
-      ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
-      : '';
-    const invoiceId = String(inv._id);
-    card.innerHTML = `
-      <div>
-        <div><strong>${inv.customer?.name || ''}</strong> — ${inv.customer?.phone || ''}</div>
-        <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
-        <div class="muted">تاريخ الإنشاء: ${new Date(inv.createdAt).toLocaleString()} | آخر تحديث: ${new Date(inv.updatedAt).toLocaleString()}</div>
-        <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)} | الربح: ${currency(profit)}</div>
-      </div>
-      <div>
-        <button type="button" data-id="${invoiceId}" class="btn-view">عرض</button>
-        <button type="button" data-id="${invoiceId}" class="btn-print">طباعة</button>
-        <button type="button" data-id="${invoiceId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
-      </div>
-    `;
-    container.appendChild(card);
-    console.log('Added invoice card for:', inv.customer?.name || 'Unknown');
-  });
-  
-  console.log('All invoice cards added to container');
+      // Prefer numeric external id
+      const invoiceNumberExt = inv.invoiceNumber;
+      // Fallback to internal _id string if needed
+      let internalId = inv._id;
+      if (typeof internalId === 'object' && internalId.buffer) {
+        internalId = Array.from(internalId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+      } else if (typeof internalId === 'object' && internalId.toString) {
+        internalId = internalId.toString();
+      } else {
+        internalId = String(internalId);
+      }
+      const externalId = (Number.isFinite(Number(invoiceNumberExt)) ? String(invoiceNumberExt) : internalId);
+      if (!externalId) { console.error('❌ Missing invoice identifier', inv); return; }
+      const revenue = (inv.items || []).reduce((s, it) => s + it.qty * (it.discountedPrice ?? it.price), 0);
+      const cost = (inv.items || []).reduce((s, it) => s + it.qty * (it.buyingPrice ?? 0), 0);
+      const profit = revenue - cost;
+      const card = document.createElement('div');
+      card.className = 'list-card';
+      const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
+        ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
+        : '';
+      const returnTotal = (inv.payments || []).filter(p => (p.note || '').trim() === 'مرتجع').reduce((s, p) => s + Number(p.amount || 0), 0);
+      card.innerHTML = `
+        <div>
+          <div><strong>${inv.customer?.name || ''}</strong> — ${inv.customer?.phone || ''}</div>
+          <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
+          <div class="muted">تاريخ الإنشاء: ${formatGregorian(inv.createdAt, true)} | آخر تحديث: ${formatGregorian(inv.updatedAt, true)}</div>
+          <div class="muted">رقم الفاتورة: ${invoiceNumberExt ?? '—'} | رقم الفاتورة: ${internalId}</div>
+          <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)} | المرتجع: ${currency(returnTotal)} | الربح: ${currency(profit)}</div>
+        </div>
+        <div>
+          <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
+          <button type="button" data-id="${externalId}" class="btn-print">طباعة</button>
+          <button type="button" data-id="${externalId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
+        </div>
+      `;
+      container.appendChild(card);
+      console.log('Added invoice card for:', inv.customer?.name || 'Unknown');
+    });
+    
+    console.log('All invoice cards added to container');
   } catch (error) {
     console.error('Error loading invoices:', error);
     const container = $('#invoice-list');
@@ -543,36 +827,89 @@ $('#invoice-search').addEventListener('keydown', (e) => { if (e.key === 'Enter')
 
 // Invoice list button handlers
 $('#invoice-list').addEventListener('click', async (e) => {
-  console.log('Invoice list clicked:', e.target);
   const btn = e.target.closest('button');
-  if (!btn) {
-    console.log('No button found in click target');
+  if (!btn) return;
+  const id = btn.getAttribute('data-id');
+  // Accept either numeric invoiceNumber or 24-hex ObjectId
+  const isNumericId = (v) => /^\d+$/.test(String(v).trim());
+  const isHex24 = (v) => /^[a-f0-9]{24}$/i.test(String(v).trim());
+  if (!id || !(isNumericId(id) || isHex24(id))) {
+    console.error('❌ Invalid invoice ID clicked:', id);
+    showErrorMessage('خطأ: رقم الفاتورة غير صالح');
     return;
   }
   
-  const id = btn.getAttribute('data-id');
-  console.log('Button clicked:', btn.className, 'ID:', id);
+  console.log('=== INVOICE LIST CLICK DEBUG ===');
+  console.log('Click target:', e.target);
+  console.log('Target tagName:', e.target.tagName);
+  console.log('Target className:', e.target.className);
+  console.log('✅ Button found:', btn.className, 'ID:', id, 'Type:', typeof id);
   
   if (btn.classList.contains('btn-print')) {
-    console.log('Print button clicked');
-    await window.api.print.invoice(id);
+    console.log('🖨️ Print button clicked');
+    try {
+      await window.api.print.invoice(id);
+      console.log('✅ Print completed');
+    } catch (error) {
+      console.error('❌ Print error:', error);
+    }
   } else if (btn.classList.contains('btn-archive')) {
-    console.log('Archive button clicked');
-    const invoices = await window.api.invoices.list({});
-    const inv = invoices.find(x => String(x._id) === id);
-    if (inv) {
-      console.log('Archiving invoice with ID:', id, 'Type:', typeof id);
-      await window.api.invoices.archive(String(id), !inv.archived);
-      await loadInvoices();
+    console.log('📁 Archive button clicked');
+    try {
+      const invoices = await window.api.invoices.list({});
+      const inv = invoices.find(x => {
+        if (isNumericId(id)) {
+          return Number(x.invoiceNumber) === Number(id);
+        }
+        // compare by internal _id string
+        let xId = x._id;
+        if (typeof xId === 'object' && xId.buffer) {
+          xId = Array.from(xId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+        } else if (typeof xId === 'object' && xId.toString) {
+          xId = xId.toString();
+        } else {
+          xId = String(xId);
+        }
+        return String(xId) === String(id);
+      });
+      if (inv) {
+        console.log('Archiving invoice with ID:', id, 'Type:', typeof id);
+        await window.api.invoices.archive(isNumericId(id) ? Number(id) : String(id), !inv.archived);
+        await loadInvoices();
+        await showInvoiceDetail(isNumericId(id) ? Number(id) : String(id));
+        console.log('✅ Archive completed');
+      }
+    } catch (error) {
+      console.error('❌ Archive error:', error);
+    }
+  } else if (btn.classList.contains('btn-edit')) {
+    console.log('✏️ Edit button clicked for invoice:', id);
+    try {
+      await showEditInvoiceForm(isNumericId(id) ? Number(id) : String(id));
+    } catch (error) {
+      console.error('❌ Edit error:', error);
+      showErrorMessage('خطأ في تعديل الفاتورة: ' + error.message);
     }
   } else if (btn.classList.contains('btn-view')) {
-    console.log('View button clicked for invoice:', id);
-    await showInvoiceDetail(id);
-    const detailPanel = document.getElementById('invoice-detail');
-    if (detailPanel) {
-      detailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    console.log('👁️ View button clicked for invoice:', id);
+    try {
+      console.log('Calling showInvoiceDetail with ID:', id);
+      await showInvoiceDetail(isNumericId(id) ? Number(id) : String(id));
+      console.log('✅ showInvoiceDetail completed');
+      const detailPanel = document.getElementById('invoice-detail');
+      if (detailPanel) {
+        console.log('📜 Scrolling to detail panel');
+        detailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        console.log('❌ Detail panel not found');
+      }
+    } catch (error) {
+      console.error('❌ View error:', error);
     }
+  } else {
+    console.log('❓ Unknown button type:', btn.className);
   }
+  console.log('=== END CLICK DEBUG ===');
 });
 
 // Utility: debounce
@@ -739,19 +1076,203 @@ async function loadPlumbers() {
   });
 }
 
-// Search page
+// Search page functionality
+async function displaySearchResults(searchTerm = '') {
+  try {
+    const filters = {};
+    if (searchTerm) {
+      filters.search = searchTerm;
+    }
+    
+    const list = await window.api.invoices.list(filters);
+    const container = $('#search-results');
+    
+    if (!container) {
+      console.error('Search results container not found!');
+      return;
+    }
+    
+    container.innerHTML = '';
+    
+    if (list.length === 0) {
+      container.innerHTML = '<div class="muted">لا توجد فواتير</div>';
+      return;
+    }
+    
+    list.forEach(inv => {
+      // Convert ObjectId buffer to string if needed
+      let invoiceId = inv._id;
+      if (typeof invoiceId === 'object' && invoiceId.buffer) {
+        // Convert buffer to hex string
+        invoiceId = Array.from(invoiceId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+        console.log('🔄 Converted buffer ID to string in search:', invoiceId);
+      } else if (typeof invoiceId === 'object' && invoiceId.toString) {
+        invoiceId = invoiceId.toString();
+      }
+      
+      if (!invoiceId || typeof invoiceId !== 'string' || invoiceId.length < 8) {
+        console.error('❌ Invalid invoice _id:', invoiceId, inv);
+        return;
+      }
+      const revenue = (inv.items || []).reduce((s, it) => s + it.qty * (it.discountedPrice ?? it.price), 0);
+      const cost = (inv.items || []).reduce((s, it) => s + it.qty * (it.buyingPrice ?? 0), 0);
+      const profit = revenue - cost;
+      
+      const card = document.createElement('div');
+      card.className = 'list-card';
+      const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
+        ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
+        : '';
+        
+      card.innerHTML = `
+        <div>
+          <div><strong>${inv.customer?.name || ''}</strong> — ${inv.customer?.phone || ''}</div>
+          <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
+          <div class="muted">تاريخ الإنشاء: ${new Date(inv.createdAt).toLocaleString()} | آخر تحديث: ${new Date(inv.updatedAt).toLocaleString()}</div>
+          <div class="muted">رقم الفاتورة: ${inv.invoiceNumber ?? '—'} | ID: ${invoiceId}</div>
+          <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)} | الربح: ${currency(profit)}</div>
+        </div>
+        <div>
+          <button type="button" data-id="${invoiceId}" class="btn-view">عرض</button>
+          <button type="button" data-id="${invoiceId}" class="btn-print">طباعة</button>
+          <button type="button" data-id="${invoiceId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+    
+    // Add event listeners for the buttons in search results
+    container.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      
+      if (!id || typeof id !== 'string' || id.length < 8) {
+        console.error('❌ Invalid invoice ID clicked:', id);
+        showErrorMessage('خطأ: رقم الفاتورة غير صالح');
+        return;
+      }
+      
+      if (btn.classList.contains('btn-print')) {
+        try {
+          await window.api.print.invoice(id);
+          showErrorMessage('تم إرسال الفاتورة للطباعة', 'success');
+        } catch (error) {
+          console.error('❌ Print error:', error);
+          showErrorMessage('خطأ في الطباعة: ' + error.message);
+        }
+      } else if (btn.classList.contains('btn-archive')) {
+        try {
+          const invoices = await window.api.invoices.list({});
+          const inv = invoices.find(x => {
+            let xId = x._id;
+            if (typeof xId === 'object' && xId.buffer) {
+              xId = Array.from(xId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+            } else if (typeof xId === 'object' && xId.toString) {
+              xId = xId.toString();
+            }
+            return String(xId) === String(id);
+          });
+          if (inv) {
+            await window.api.invoices.archive(String(id), !inv.archived);
+            await displaySearchResults($('#search-input').value.trim());
+            showErrorMessage(inv.archived ? 'تم إلغاء الأرشفة' : 'تم الأرشفة', 'success');
+          }
+        } catch (error) {
+          console.error('❌ Archive error:', error);
+          showErrorMessage('خطأ في الأرشفة: ' + error.message);
+        }
+      } else if (btn.classList.contains('btn-edit')) {
+        try {
+          await showEditInvoiceForm(id);
+        } catch (error) {
+          console.error('❌ Edit error:', error);
+          showErrorMessage('خطأ في تعديل الفاتورة: ' + error.message);
+        }
+      } else if (btn.classList.contains('btn-view')) {
+        try {
+          await showInvoiceDetail(id);
+          // Switch to invoices tab to show the detail
+          const invoicesTab = $$('.tab').find(t => t.getAttribute('data-tab') === 'invoices');
+          if (invoicesTab) {
+            invoicesTab.click();
+          }
+        } catch (error) {
+          console.error('❌ View error:', error);
+          showErrorMessage('خطأ في عرض الفاتورة: ' + error.message);
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error displaying search results:', error);
+    const container = $('#search-results');
+    if (container) {
+      container.innerHTML = '<div class="muted" style="color: red;">خطأ في تحميل النتائج</div>';
+    }
+  }
+}
+
+// Search button functionality
 const searchBtn = $('#search-btn');
 if (searchBtn) {
   searchBtn.addEventListener('click', async () => {
     try {
-      $('#invoice-search').value = $('#search-input').value;
-      $$('.tab').find(t => t.getAttribute('data-tab') === 'الفواتير' || t.getAttribute('data-tab') === 'invoices')?.click();
-      await loadInvoices();
+      const searchTerm = $('#search-input').value.trim();
+      console.log('Search button clicked with term:', searchTerm);
+      await displaySearchResults(searchTerm);
+      
+      if (searchTerm) {
+        showErrorMessage(`تم البحث عن: ${searchTerm}`, 'success');
+      } else {
+        showErrorMessage('تم عرض جميع الفواتير', 'success');
+      }
     } catch (error) {
       console.error('Error searching:', error);
+      showErrorMessage('خطأ في البحث: ' + error.message);
     }
   });
 }
+
+// Clear search button
+const clearSearchBtn = $('#clear-search-btn');
+if (clearSearchBtn) {
+  clearSearchBtn.addEventListener('click', async () => {
+    try {
+      $('#search-input').value = '';
+      await displaySearchResults('');
+      showErrorMessage('تم عرض جميع الفواتير', 'success');
+    } catch (error) {
+      console.error('Error clearing search:', error);
+      showErrorMessage('خطأ في عرض الفواتير: ' + error.message);
+    }
+  });
+}
+
+// Add Enter key support for search
+const searchInput = $('#search-input');
+if (searchInput) {
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const searchBtn = $('#search-btn');
+      if (searchBtn) {
+        searchBtn.click();
+      }
+    }
+  });
+}
+
+// Load all invoices when search tab is opened
+$$('.tab').forEach(tab => {
+  if (tab.getAttribute('data-tab') === 'search') {
+    tab.addEventListener('click', async () => {
+      // Small delay to ensure tab is active
+      setTimeout(async () => {
+        await displaySearchResults('');
+      }, 100);
+    });
+  }
+});
 
 // Products creation form: stay on products tab and show status
 const productForm = $('#product-form');
@@ -807,6 +1328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('loadInvoices completed');
       }).catch(error => {
         console.error('loadInvoices failed:', error);
+        const invoiceList = $('#invoice-list');
         if (invoiceList) {
           invoiceList.innerHTML = '<div style="color: red; padding: 10px; border: 2px solid red;">✗ Error loading invoices: ' + error.message + '</div>';
         }
