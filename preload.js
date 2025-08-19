@@ -23,13 +23,15 @@ contextBridge.exposeInMainWorld('api', {
     list: (filters) => ipcRenderer.invoke('invoices:list', filters),
     getById: (id) => ipcRenderer.invoke('invoices:getById', id),
     addPayment: (invoiceId, payment) => ipcRenderer.invoke('invoices:addPayment', { invoiceId, payment }),
+    update: (invoiceId, updateData) => ipcRenderer.invoke('invoices:update', { invoiceId, updateData }),
     updateItemsAndNotes: (invoiceId, items, notes) => ipcRenderer.invoke('invoices:updateItemsAndNotes', { invoiceId, items, notes }),
-    archive: (invoiceId, archived) => ipcRenderer.invoke('invoices:archive', { invoiceId, archived })
+    archive: (invoiceId, archived) => ipcRenderer.invoke('invoices:archive', invoiceId, archived),
+    delete: (invoiceId) => ipcRenderer.invoke('invoices:delete', invoiceId)
   },
   returns: {
     create: (data) => ipcRenderer.invoke('returns:create', data)
   },
   print: {
-    invoice: (invoiceId) => ipcRenderer.invoke('print:invoice', { invoiceId })
+    invoice: (invoiceId) => ipcRenderer.invoke('print:invoice', invoiceId)
   }
 });

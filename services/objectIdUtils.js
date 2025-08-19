@@ -10,14 +10,19 @@ function toObjectIdString(id) {
   
   // If it's already a string, validate and return
   if (typeof id === 'string') {
-    return Types.ObjectId.isValid(id) ? id : null;
+    const trimmedId = id.trim();
+    if (Types.ObjectId.isValid(trimmedId)) return trimmedId;
+    // Try to extract a 24-hex substring from wrappers like ObjectId("...")
+    const match = trimmedId.match(/[a-fA-F0-9]{24}/);
+    if (match && Types.ObjectId.isValid(match[0])) return match[0];
+    return null;
   }
   
   // If it's an object, try to extract the ID
   if (typeof id === 'object' && id !== null) {
     // Try toString() method (works for MongoDB ObjectId)
     if (id.toString && typeof id.toString === 'function') {
-      const stringId = id.toString();
+      const stringId = id.toString().trim();
       return Types.ObjectId.isValid(stringId) ? stringId : null;
     }
     
@@ -32,12 +37,12 @@ function toObjectIdString(id) {
     }
     
     // Last resort: convert to string
-    const stringId = String(id);
+    const stringId = String(id).trim();
     return Types.ObjectId.isValid(stringId) ? stringId : null;
   }
   
   // Convert anything else to string and validate
-  const stringId = String(id);
+  const stringId = String(id).trim();
   return Types.ObjectId.isValid(stringId) ? stringId : null;
 }
 

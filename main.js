@@ -8,32 +8,76 @@ const customerService = require('./services/customerService');
 const plumberService = require('./services/plumberService');
 const invoiceService = require('./services/invoiceService');
 const { enqueueSync, startBackgroundSync } = require('./services/syncService');
+const { toObjectIdString } = require('./services/objectIdUtils');
 
 let mainWindow;
 
 async function createWindow() {
-  await connectLocalDb(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/plumbing_shop');
-  await connectAtlasDb(process.env.MONGODB_ATLAS_URI || '');
-  startBackgroundSync();
+  try {
+    console.log('🚀 Starting application...');
+    
+    console.log('📊 Connecting to local database...');
+    await connectLocalDb(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/plumbing_shop');
+    console.log('✅ Local database connected');
+    
+    console.log('☁️ Connecting to Atlas database...');
+    await connectAtlasDb(process.env.MONGODB_ATLAS_URI || '');
+    console.log('✅ Atlas database connected');
+    
+    console.log('🔄 Starting background sync...');
+    startBackgroundSync();
+    console.log('✅ Background sync started');
 
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  });
+    mainWindow = new BrowserWindow({
+      width: 1280,
+      height: 800,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    });
 
-  await mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+    // Enable developer tools for debugging
+    mainWindow.webContents.openDevTools();
+    
+    console.log('🌐 Loading main window...');
+    await mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+    console.log('✅ Application loaded successfully');
+    
+  } catch (error) {
+    console.error('❌ Error creating window:', error);
+    console.error('Stack trace:', error.stack);
+    
+    // Show error dialog to user
+    const { dialog } = require('electron');
+    dialog.showErrorBox('Application Error', `Failed to start application: ${error.message}`);
+  }
 }
 
 app.whenReady().then(() => {
-  createWindow();
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  createWindow().catch(error => {
+    console.error('❌ Failed to create window:', error);
+    app.quit();
   });
+  
+  app.on('activate', function () {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow().catch(error => {
+        console.error('❌ Failed to create window on activate:', error);
+      });
+    }
+  });
+});
+
+// Global error handlers
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  console.error('Stack trace:', error.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 app.on('window-all-closed', function () {
@@ -42,27 +86,66 @@ app.on('window-all-closed', function () {
 
 // Product IPC
 ipcMain.handle('products:create', async (_e, payload) => {
-  const created = await productService.createProduct(payload);
-  await enqueueSync('Product', 'upsert', created);
-  return created;
+  try {
+    console.log('📦 Creating product:', payload);
+    const created = await productService.createProduct(payload);
+    await enqueueSync('Product', 'upsert', created);
+    console.log('✅ Product created:', created._id);
+    return created;
+  } catch (error) {
+    console.error('❌ Error creating product:', error);
+    return { error: true, message: error.message };
+  }
 });
 
 ipcMain.handle('products:search', async (_e, prefix) => {
-  return productService.searchProductsByNamePrefix(prefix || '');
+  try {
+    console.log('🔍 Searching products with prefix:', prefix);
+    const results = await productService.searchProductsByNamePrefix(prefix || '');
+    console.log('✅ Found', results.length, 'products');
+    return results;
+  } catch (error) {
+    console.error('❌ Error searching products:', error);
+    return { error: true, message: error.message };
+  }
 });
 
-ipcMain.handle('products:list', async () => productService.listProducts());
+ipcMain.handle('products:list', async () => {
+  try {
+    console.log('📋 Listing all products');
+    const products = await productService.listProducts();
+    console.log('✅ Listed', products.length, 'products');
+    return products;
+  } catch (error) {
+    console.error('❌ Error listing products:', error);
+    return { error: true, message: error.message };
+  }
+});
 
 ipcMain.handle('products:update', async (_e, { id, update }) => {
-  const updated = await productService.updateProduct(id, update);
-  await enqueueSync('Product', 'update', { id, update });
-  return updated;
+  try {
+    console.log('📝 Updating product:', id, update);
+    const updated = await productService.updateProduct(id, update);
+    await enqueueSync('Product', 'update', { id, update });
+    console.log('✅ Product updated:', id);
+    return updated;
+  } catch (error) {
+    console.error('❌ Error updating product:', error);
+    return { error: true, message: error.message };
+  }
 });
 
 ipcMain.handle('products:delete', async (_e, id) => {
-  const deleted = await productService.deleteProduct(id);
-  await enqueueSync('Product', 'delete', { id });
-  return deleted;
+  try {
+    console.log('🗑️ Deleting product:', id);
+    const deleted = await productService.deleteProduct(id);
+    await enqueueSync('Product', 'delete', { id });
+    console.log('✅ Product deleted:', id);
+    return deleted;
+  } catch (error) {
+    console.error('❌ Error deleting product:', error);
+    return { error: true, message: error.message };
+  }
 });
 
 // Customer IPC
@@ -102,21 +185,46 @@ ipcMain.handle('invoices:list', async (_e, filters) => invoiceService.listInvoic
 ipcMain.handle('invoices:getById', async (_e, id) => invoiceService.getInvoiceById(id));
 
 ipcMain.handle('invoices:addPayment', async (_e, { invoiceId, payment }) => {
-  const result = await invoiceService.addPaymentToInvoice(invoiceId, payment);
-  await enqueueSync('Invoice', 'update', { id: invoiceId, update: { payments: result.payments, remaining: result.remaining } });
+  console.log("IPC 'invoices:addPayment' received:", { invoiceIdType: typeof invoiceId, invoiceId });
+  // Normalize invoiceId to a valid ObjectId string defensively
+  const normalizedId = toObjectIdString(invoiceId)
+    || toObjectIdString(invoiceId?._id)
+    || toObjectIdString(invoiceId?.id);
+  console.log("IPC 'invoices:addPayment' normalizedId:", normalizedId);
+  if (!normalizedId) {
+    return { error: true, message: `Invalid invoice ID format` };
+  }
+  const result = await invoiceService.addPaymentToInvoice(normalizedId, payment || {});
+  await enqueueSync('Invoice', 'update', { id: normalizedId, update: { payments: result.payments, remaining: result.remaining } });
   return result;
 });
 
 ipcMain.handle('invoices:updateItemsAndNotes', async (_e, { invoiceId, items, notes }) => {
   const updated = await invoiceService.updateInvoiceItemsAndNotes(invoiceId, items, notes);
-  await enqueueSync('Invoice', 'update', { id: invoiceId, update: { items: updated.items, notes: updated.notes, total: updated.total, remaining: updated.remaining } });
+  await enqueueSync('Invoice', 'update', { id: invoiceId, update: { items, notes } });
   return updated;
 });
 
-ipcMain.handle('invoices:archive', async (_e, { invoiceId, archived }) => {
+ipcMain.handle('invoices:update', async (_e, { invoiceId, updateData }) => {
+  const updated = await invoiceService.updateInvoice(invoiceId, updateData);
+  await enqueueSync('Invoice', 'update', { id: invoiceId, update: updateData });
+  return updated;
+});
+
+ipcMain.handle('invoices:archive', async (_e, invoiceId, archived) => {
   const updated = await invoiceService.archiveInvoice(invoiceId, archived);
   await enqueueSync('Invoice', 'update', { id: invoiceId, update: { archived } });
   return updated;
+});
+
+ipcMain.handle('invoices:delete', async (_e, invoiceId) => {
+  try {
+    const result = await invoiceService.deleteInvoice(invoiceId);
+    await enqueueSync('Invoice', 'delete', { id: invoiceId });
+    return result;
+  } catch (err) {
+    return { error: true, message: err.message };
+  }
 });
 
 ipcMain.handle('returns:create', async (_e, payload) => {
@@ -125,7 +233,7 @@ ipcMain.handle('returns:create', async (_e, payload) => {
   return ret;
 });
 
-ipcMain.handle('print:invoice', async (_e, { invoiceId }) => {
+ipcMain.handle('print:invoice', async (_e, invoiceId) => {
   const html = await invoiceService.generateInvoicePrintableHtml(invoiceId);
   const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));

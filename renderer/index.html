@@ -11,7 +11,8 @@
   <header>
     <h1>متجر السباكة</h1>
     <nav>
-      <button class="tab active" data-tab="invoices">الفواتير</button>
+      <button class="tab active" data-tab="create-invoice">إنشاء فاتورة</button>
+      <button class="tab" data-tab="invoices">عرض الفواتير</button>
       <button class="tab" data-tab="products">المنتجات</button>
       <button class="tab" data-tab="customers">العملاء</button>
       <button class="tab" data-tab="search">بحث</button>
@@ -19,7 +20,7 @@
   </header>
 
   <main>
-    <section id="invoices" class="page active">
+    <section id="create-invoice" class="page active">
       <div class="panel">
         <h2>إنشاء فاتورة</h2>
         <form id="invoice-form">
@@ -72,6 +73,9 @@
           <div id="invoice-error" class="muted" style="color:#fca5a5"></div>
         </form>
       </div>
+    </section>
+
+    <section id="invoices" class="page">
       <div class="panel">
         <h2>قائمة الفواتير</h2>
         <div class="row">
@@ -151,6 +155,7 @@
         <div class="row">
           <input type="text" id="search-input" placeholder="اكتب للبحث عن الفواتير..." />
           <button id="search-btn">بحث</button>
+          <button id="clear-search-btn">عرض الكل</button>
         </div>
         <div id="search-results"></div>
       </div>
@@ -158,5 +163,6 @@
   </main>
 
   <script src="renderer.js"></script>
+  <script src="edit-invoice.js"></script>
 </body>
 </html>

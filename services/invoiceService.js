@@ -3,6 +3,11 @@ const { getLocalModels } = require('./db');
 const { Types } = require('mongoose');
 const { toObjectIdString, findByIdSafe } = require('./objectIdUtils');
 
+function isNumericId(v) {
+  const s = String(v ?? '').trim();
+  return /^[0-9]+$/.test(s);
+}
+
 function computeTotals(items, payments) {
   const total = (items || []).reduce((sum, it) => sum + (it.qty || 0) * ((it.discountedPrice ?? it.price) || 0), 0);
   const paid = (payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -64,12 +69,33 @@ async function createInvoice(payload) {
     }
 
     itemDocs.push({ product: productDoc._id, qty: it.qty, price: selling, buyingPrice: buying, category: categoryRaw, discountedPrice: discounted });
+    // Decrease stock for sold quantity
+    try {
+      const qty = Number(it.qty || 0);
+      if (productDoc?._id && qty > 0) {
+        await Product.updateOne({ _id: productDoc._id }, { $inc: { stock: -qty } });
+      }
+    } catch (e) {
+      console.warn('Stock decrement failed for product', productDoc?._id?.toString?.() || productDoc?._id, e?.message);
+    }
   }
 
   const payments = (payload.payments || []).map(p => ({ amount: p.amount, date: p.date || new Date(), note: p.note || '' }));
   const { total, remaining } = computeTotals(itemDocs, payments);
 
-  const invoice = await Invoice.create({
+  // Attempt to set invoiceNumber explicitly (pre-save will still handle if we omit or fail)
+  let computedInvoiceNumber;
+  try {
+    const last = await Invoice.findOne({}, {}, { sort: { invoiceNumber: -1 } }).lean();
+    const lastNum = Number(last?.invoiceNumber);
+    if (Number.isFinite(lastNum)) {
+      computedInvoiceNumber = Math.trunc(lastNum) + 1;
+    }
+  } catch (e) {
+    console.warn('Could not compute next invoice number, letting pre-save handle it:', e?.message);
+  }
+
+  const baseDoc = {
     customer: customer._id,
     plumberName: payload.plumberName || '',
     items: itemDocs,
@@ -80,7 +106,12 @@ async function createInvoice(payload) {
     archived: false,
     discountAbogaliPercent: abogaliPercent,
     discountBrPercent: brPercent
-  });
+  };
+  if (Number.isFinite(computedInvoiceNumber)) {
+    baseDoc.invoiceNumber = computedInvoiceNumber;
+  }
+
+  const invoice = await Invoice.create(baseDoc);
 
   await invoice.populate([{ path: 'customer' }, { path: 'items.product' }]);
   return invoice.toObject();
@@ -93,13 +124,23 @@ async function listInvoices(filters) {
   if (filters.archived === false) query.archived = false;
 
   if (filters.search) {
-    const rx = new RegExp(filters.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const s = String(filters.search).trim();
+    const rx = new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     const customers = await Customer.find({ $or: [{ name: rx }, { phone: rx }] }, { _id: 1 }).lean();
     const customerIds = customers.map(c => c._id);
-    query.$or = [
+    const ors = [
       { plumberName: rx },
       { customer: { $in: customerIds } }
     ];
+    // If search is numeric, allow searching by invoiceNumber
+    if (/^\d+$/.test(s)) {
+      ors.push({ invoiceNumber: Number(s) });
+    }
+    // If search looks like ObjectId, allow searching by _id
+    if (/^[a-f0-9]{24}$/i.test(s)) {
+      ors.push({ _id: Types.ObjectId.createFromHexString(s) });
+    }
+    query.$or = ors;
   }
 
   return Invoice.find(query)
@@ -112,26 +153,43 @@ async function listInvoices(filters) {
 async function getInvoiceById(id) {
   const { Invoice, ReturnInvoice } = getLocalModels();
   
-  const validId = toObjectIdString(id);
-  if (!validId) return null;
-  
-  const inv = await findByIdSafe(Invoice, validId, { 
-    populate: ['customer', 'items.product'], 
-    lean: true 
-  });
+  let inv = null;
+  let originalKey = null;
+  if (isNumericId(id)) {
+    const n = Number(String(id).trim());
+    inv = await Invoice.findOne({ invoiceNumber: n })
+      .populate('customer')
+      .populate('items.product')
+      .lean();
+    originalKey = inv?._id;
+  } else {
+    const validId = toObjectIdString(id);
+    if (!validId) return null;
+    inv = await findByIdSafe(Invoice, validId, { 
+      populate: ['customer', 'items.product'], 
+      lean: true 
+    });
+    originalKey = validId;
+  }
   if (!inv) return null;
-  
-  const ret = await ReturnInvoice.findOne({ originalInvoice: validId }).lean();
+  const ret = await ReturnInvoice.findOne({ originalInvoice: originalKey }).lean();
   return { ...inv, returnInvoice: ret || null };
 }
 
 async function addPaymentToInvoice(invoiceId, payment) {
   const { Invoice } = getLocalModels();
   
-  const validId = toObjectIdString(invoiceId);
-  if (!validId) throw new Error('Invalid invoice ID format');
-  
-  const inv = await Invoice.findById(validId);
+  console.log('addPaymentToInvoice called with:', { invoiceId, type: typeof invoiceId });
+  let inv = null;
+  if (isNumericId(invoiceId)) {
+    const n = Number(String(invoiceId).trim());
+    inv = await Invoice.findOne({ invoiceNumber: n });
+  } else {
+    const validId = toObjectIdString(invoiceId);
+    console.log('addPaymentToInvoice normalized id:', { validId });
+    if (!validId) throw new Error('Invalid invoice ID format');
+    inv = await Invoice.findById(validId);
+  }
   if (!inv) throw new Error('Invoice not found');
   inv.payments.push({ amount: payment.amount, date: payment.date || new Date(), note: payment.note || '' });
   inv.recomputeTotals();
@@ -140,87 +198,200 @@ async function addPaymentToInvoice(invoiceId, payment) {
   return inv.toObject();
 }
 
-async function updateInvoiceItemsAndNotes(invoiceId, items, notes) {
-  const { Invoice, Product } = getLocalModels();
-  
-  const validId = toObjectIdString(invoiceId);
-  if (!validId) throw new Error('Invalid invoice ID format');
-  
-  const inv = await Invoice.findById(validId);
-  if (!inv) throw new Error('Invoice not found');
-  const normalized = [];
-  for (const it of (items || [])) {
-    const rawId = typeof it.product === 'object' && it.product !== null ? (it.product._id || it.product.id || null) : it.product;
-    const productDoc = rawId && Types.ObjectId.isValid(rawId) ? await Product.findById(rawId) : null;
-    const categoryRaw = it.category ?? productDoc?.category ?? '';
-    normalized.push({
-      product: productDoc?._id || (Types.ObjectId.isValid(rawId) ? rawId : undefined),
-      qty: it.qty,
-      price: it.price ?? productDoc?.sellingPrice ?? 0,
-      buyingPrice: it.buyingPrice ?? productDoc?.buyingPrice ?? 0,
-      category: categoryRaw,
-      discountedPrice: it.discountedPrice ?? null
-    });
+async function updateInvoice(invoiceId, updateData) {
+  const { Invoice, Product, Customer } = getLocalModels();
+  let inv = null;
+  if (isNumericId(invoiceId)) {
+    const n = Number(String(invoiceId).trim());
+    inv = await Invoice.findOne({ invoiceNumber: n });
+  } else {
+    const validId = toObjectIdString(invoiceId);
+    if (!validId) throw new Error('Invalid invoice ID format');
+    inv = await Invoice.findById(validId);
   }
-  inv.items = normalized;
-  inv.notes = notes || inv.notes;
+  if (!inv) throw new Error('Invoice not found');
+  
+  // Update customer if provided
+  if (updateData.customer) {
+    let customer = await Customer.findOne({ phone: updateData.customer.phone });
+    if (!customer) {
+      customer = await Customer.create({ 
+        name: updateData.customer.name, 
+        phone: updateData.customer.phone 
+      });
+    }
+    inv.customer = customer._id;
+  }
+  
+  // Update plumber name
+  if (updateData.plumberName !== undefined) {
+    inv.plumberName = updateData.plumberName;
+  }
+  
+  // Update discount percentages
+  if (updateData.discountAbogaliPercent !== undefined) {
+    inv.discountAbogaliPercent = Math.max(0, Math.min(100, Number(updateData.discountAbogaliPercent || 0)));
+  }
+  if (updateData.discountBrPercent !== undefined) {
+    inv.discountBrPercent = Math.max(0, Math.min(100, Number(updateData.discountBrPercent || 0)));
+  }
+  
+  // Update items if provided
+  if (updateData.items) {
+    const normalized = [];
+    for (const it of updateData.items) {
+      const rawId = typeof it.product === 'object' && it.product !== null ? (it.product._id || it.product.id || null) : it.product;
+      let productDoc = null;
+      if (rawId && Types.ObjectId.isValid(rawId)) {
+        productDoc = await Product.findById(rawId);
+      } else if (rawId) {
+        productDoc = null;
+      }
+      if (!productDoc && it.name) {
+        productDoc = await Product.findOne({ name: it.name });
+      }
+      if (!productDoc && it.name) {
+        productDoc = await Product.create({
+          name: it.name,
+          category: it.category || '',
+          buyingPrice: it.buyingPrice ?? 0,
+          sellingPrice: it.price ?? it.sellingPrice ?? 0,
+          stock: 0
+        });
+      }
+      
+      const selling = it.price ?? it.sellingPrice ?? productDoc?.sellingPrice ?? 0;
+      const buying = it.buyingPrice ?? productDoc?.buyingPrice ?? 0;
+      const categoryRaw = (it.category ?? productDoc?.category ?? '').trim();
+      
+      // Apply discounts based on category
+      let discounted = null;
+      const normCat = categoryRaw.replace(/\s+/g, '').toLowerCase();
+      if (normCat === 'ابوغالي' && inv.discountAbogaliPercent > 0) {
+        discounted = Number((selling * (1 - inv.discountAbogaliPercent / 100)).toFixed(2));
+      } else if (normCat === 'br' && inv.discountBrPercent > 0) {
+        discounted = Number((selling * (1 - inv.discountBrPercent / 100)).toFixed(2));
+      }
+      
+      normalized.push({
+        product: productDoc?._id,
+        qty: it.qty,
+        price: selling,
+        buyingPrice: buying,
+        category: categoryRaw,
+        discountedPrice: discounted
+      });
+    }
+    inv.items = normalized;
+  }
+  
+  // Update notes
+  if (updateData.notes !== undefined) {
+    inv.notes = updateData.notes;
+  }
+  
   inv.recomputeTotals();
   await inv.save();
   await inv.populate([{ path: 'customer' }, { path: 'items.product' }]);
   return inv.toObject();
 }
 
+async function updateInvoiceItemsAndNotes(invoiceId, items, notes) {
+  return updateInvoice(invoiceId, { items, notes });
+}
+
 async function archiveInvoice(invoiceId, archived) {
   const { Invoice } = getLocalModels();
   
-  const validId = toObjectIdString(invoiceId);
-  if (!validId) throw new Error('Invalid invoice ID format');
-  
-  const inv = await Invoice.findByIdAndUpdate(validId, { archived: !!archived }, { new: true });
+  console.log('archiveInvoice called with:', { invoiceId, type: typeof invoiceId, archived });
+  let inv = null;
+  if (isNumericId(invoiceId)) {
+    const n = Number(String(invoiceId).trim());
+    inv = await Invoice.findOneAndUpdate({ invoiceNumber: n }, { archived: !!archived }, { new: true });
+  } else {
+    const validId = toObjectIdString(invoiceId);
+    console.log('toObjectIdString result:', { validId, originalId: invoiceId });
+    if (!validId) {
+      console.error('Invalid invoice ID format:', { invoiceId, type: typeof invoiceId });
+      throw new Error(`Invalid invoice ID format: ${invoiceId} (type: ${typeof invoiceId})`);
+    }
+    inv = await Invoice.findByIdAndUpdate(validId, { archived: !!archived }, { new: true });
+  }
+  if (!inv) {
+    console.error('Invoice not found:', { validId });
+    throw new Error(`Invoice not found`);
+  }
   return inv.toObject();
 }
 
 async function createReturnInvoice(payload) {
-  const { ReturnInvoice, Invoice } = getLocalModels();
-  
-  const validId = toObjectIdString(payload.originalInvoice);
-  if (!validId) throw new Error('Invalid original invoice ID format');
-  
-  const inv = await Invoice.findById(validId);
+  const { ReturnInvoice, Invoice, Product } = getLocalModels();
+  let inv = null;
+  if (isNumericId(payload.originalInvoice)) {
+    const n = Number(String(payload.originalInvoice).trim());
+    inv = await Invoice.findOne({ invoiceNumber: n });
+  } else {
+    const validId = toObjectIdString(payload.originalInvoice);
+    if (!validId) throw new Error('Invalid original invoice ID format');
+    inv = await Invoice.findById(validId);
+  }
   if (!inv) throw new Error('Original invoice not found');
+  // No validation: accept any returned items
+  const items = (payload.items || []).map(it => ({
+    product: (it.productName || it.product || '').trim(),
+    productId: it.productId && Types.ObjectId.isValid(it.productId) ? it.productId : undefined,
+    productName: (it.productName || it.product || '').trim(),
+    qty: Number(it.qty || 0),
+    price: Number(it.price || 0)
+  })).filter(it => it.product && it.qty > 0);
   const doc = await ReturnInvoice.create({
     originalInvoice: inv._id,
-    items: (payload.items || []).map(it => ({ product: it.product, qty: it.qty, price: it.price, reason: it.reason || '' })),
+    items,
     createdAt: new Date()
   });
+  // Increase stock for returned quantities
+  try {
+    for (const rit of items) {
+      const qty = Number(rit.qty || 0);
+      if (qty <= 0) continue;
+      if (rit.productId && Types.ObjectId.isValid(rit.productId)) {
+        await Product.updateOne({ _id: rit.productId }, { $inc: { stock: qty } });
+      } else if (rit.productName) {
+        // Fallback by name
+        await Product.updateOne({ name: rit.productName }, { $inc: { stock: qty } });
+      }
+    }
+  } catch (e) {
+    console.warn('Stock increment on return failed:', e?.message);
+  }
+  // Deduct the return total from the invoice by adding a payment equal to the return amount
+  const returnTotal = items.reduce((s, it) => s + Number(it.qty || 0) * Number(it.price || 0), 0);
+  if (returnTotal > 0) {
+    inv.payments.push({ amount: returnTotal, date: new Date(), note: 'مرتجع' });
+    inv.recomputeTotals();
+    await inv.save();
+  }
   return doc.toObject();
 }
 
-function renderItemsTable(items) {
-  const rows = (items || []).map(it => `
-    <tr>
-      <td>${it.product?.name || ''}${it.category ? ' (' + it.category + ')' : ''}</td>
-      <td style="text-align:right">${it.qty}</td>
-      <td style="text-align:right">${((it.discountedPrice ?? it.price)).toFixed(2)}${it.discountedPrice != null ? ` <span style="color:#16a34a">(-${(100 - (it.discountedPrice / it.price * 100)).toFixed(0)}%)</span>` : ''}</td>
-      <td style="text-align:right">${(it.qty * (it.discountedPrice ?? it.price)).toFixed(2)}</td>
-    </tr>
-  `).join('');
-  return `
-    <table style="width:100%; border-collapse:collapse" border="1" cellspacing="0" cellpadding="6">
-      <thead>
-        <tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
-}
-
 async function generateInvoicePrintableHtml(invoiceId) {
-  const validId = toObjectIdString(invoiceId);
-  if (!validId) throw new Error('Invalid invoice ID format');
-  
-  const inv = await getInvoiceById(validId);
-  if (!inv) throw new Error('Invoice not found');
+  console.log('generateInvoicePrintableHtml called with:', { invoiceId, type: typeof invoiceId });
+  let inv = null;
+  if (isNumericId(invoiceId)) {
+    inv = await getInvoiceById(Number(String(invoiceId).trim()));
+  } else {
+    const validId = toObjectIdString(invoiceId);
+    console.log('toObjectIdString result:', { validId, originalId: invoiceId });
+    if (!validId) {
+      console.error('Invalid invoice ID format:', { invoiceId, type: typeof invoiceId });
+      throw new Error(`Invalid invoice ID format: ${invoiceId} (type: ${typeof invoiceId})`);
+    }
+    inv = await getInvoiceById(validId);
+  }
+  if (!inv) {
+    console.error('Invoice not found:', { validId });
+    throw new Error('Invoice not found');
+  }
   const paymentsRows = (inv.payments || []).map(p => `
     <tr>
       <td>${dayjs(p.date).format('YYYY-MM-DD')}</td>
@@ -228,29 +399,46 @@ async function generateInvoicePrintableHtml(invoiceId) {
       <td style="text-align:right">${Number(p.amount).toFixed(2)}</td>
     </tr>
   `).join('');
+  const itemsTotal = Number(inv.total || 0);
+  const paidTotal = Number((inv.payments || []).reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(2));
+  const returnTotal = Number((inv.returnInvoice?.items || []).reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0).toFixed(2));
+  const remaining = Number((inv.remaining ?? Math.max(0, itemsTotal - paidTotal)).toFixed(2));
   const returnSection = inv.returnInvoice ? `
     <h3>مرتجع</h3>
     <div>التاريخ: ${dayjs(inv.returnInvoice.createdAt).format('YYYY-MM-DD')}</div>
-    <table style="width:100%; border-collapse:collapse" border="1" cellspacing="0" cellpadding="6">
-      <thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th>السبب</th></tr></thead>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>الصنف</th>
+          <th>الكمية</th>
+          <th>السعر</th>
+          <th>الإجمالي</th>
+        </tr>
+      </thead>
       <tbody>
-        ${inv.returnInvoice.items.map(ri => `<tr><td>${ri.product}</td><td>${ri.qty}</td><td style="text-align:right">${ri.price.toFixed(2)}</td><td>${ri.reason || ''}</td></tr>`).join('')}
+        ${inv.returnInvoice.items.map(ri => `
+          <tr>
+            <td>${ri.productName || ri.product}</td>
+            <td style="text-align:center">${ri.qty}</td>
+            <td style="text-align:right">${Number(ri.price).toFixed(2)}</td>
+            <td style="text-align:right">${(Number(ri.qty || 0) * Number(ri.price || 0)).toFixed(2)}</td>
+          </tr>
+        `).join('')}
       </tbody>
     </table>
   ` : '';
 
-  const revenue = (inv.items || []).reduce((s, it) => s + it.qty * (it.discountedPrice ?? it.price), 0);
-  const cost = (inv.items || []).reduce((s, it) => s + it.qty * (it.buyingPrice ?? 0), 0);
-  const profit = revenue - cost;
-
-  const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
-    ? `<div><strong>الخصومات حسب الفئة:</strong> ابوغالي ${inv.discountAbogaliPercent}% | BR ${inv.discountBrPercent}%</div>`
-    : '';
+  // Hide profit and discount percentage in print view
+  // const revenue = (inv.items || []).reduce((s, it) => s + it.qty * (it.discountedPrice ?? it.price), 0);
+  // const cost = (inv.items || []).reduce((s, it) => s + it.qty * (it.buyingPrice ?? 0), 0);
+  // const profit = revenue - cost;
+  const discountInfo = '';
 
   const rows = (inv.items || []).map(it => `
     <tr>
-      <td>${it.product?.name || ''}${it.category ? ' (' + it.category + ')' : ''}</td>
-      <td style="text-align:right">${it.qty}</td>
+      <td>${it.product?.name || ''}</td>
+      <td>${it.category || ''}</td>
+      <td style="text-align:center">${it.qty}</td>
       <td style="text-align:right">${((it.discountedPrice ?? it.price)).toFixed(2)}</td>
       <td style="text-align:right">${(it.qty * (it.discountedPrice ?? it.price)).toFixed(2)}</td>
     </tr>
@@ -267,11 +455,18 @@ async function generateInvoicePrintableHtml(invoiceId) {
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .muted { color: #666; }
         table { direction: rtl; }
+        .tbl { width:100%; border-collapse: collapse; }
+        .tbl th, .tbl td { border: 1px solid #e5e7eb; padding: 6px; }
+        .tbl thead th { background:#f3f4f6; }
+        .totals-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:16px; }
+        .card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:12px; }
+        .card .label { font-size:12px; color:#6b7280; margin-bottom:6px; }
+        .card .value { font-size:20px; font-weight:700; color:#111827; }
       </style>
     </head>
     <body>
-      <h1>متجر السباكة</h1>
-      <div class="muted">هاتف: xxx-xxx | العنوان: ...</div>
+      <h1>معرض احمد بدوي</h1>
+      <div class="muted">هاتف: 01003771479 | العنوان: الكرنك الجديد / نجع بدران</div>
       <hr/>
       <div class="grid">
         <div>
@@ -286,27 +481,53 @@ async function generateInvoicePrintableHtml(invoiceId) {
       </div>
       ${discountInfo}
       <h2>الأصناف</h2>
-      <table style="width:100%; border-collapse:collapse" border="1" cellspacing="0" cellpadding="6">
+      <table class="tbl">
         <thead>
-          <tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr>
+          <tr>
+            <th>الصنف</th>
+            <th>الفئة</th>
+            <th>الكمية</th>
+            <th>سعر البيع</th>
+            <th>الإجمالي</th>
+          </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
-      <div style="margin-top:12px; text-align:left">
-        <div><strong>الإجمالي:</strong> ${inv.total.toFixed(2)}</div>
-        <div><strong>المتبقي:</strong> ${inv.remaining.toFixed(2)}</div>
-        <div><strong>الربح:</strong> ${profit.toFixed(2)}</div>
-      </div>
+      
+      ${returnSection}
       <h3>المدفوعات</h3>
-      <table style="width:100%; border-collapse:collapse" border="1" cellspacing="0" cellpadding="6">
+      <table class="tbl">
         <thead><tr><th>التاريخ</th><th>ملاحظة</th><th>المبلغ</th></tr></thead>
         <tbody>${paymentsRows}</tbody>
       </table>
       <h3>ملاحظات</h3>
       <div>${(inv.notes || '').replace(/</g, '&lt;')}</div>
-      ${returnSection}
+      <div class="totals-grid">
+        <div class="card"><div class="label">إجمالي الأصناف</div><div class="value">${itemsTotal.toFixed(2)}</div></div>
+        <div class="card"><div class="label">إجمالي المدفوع</div><div class="value">${paidTotal.toFixed(2)}</div></div>
+        <div class="card"><div class="label">إجمالي المرتجع</div><div class="value">${returnTotal.toFixed(2)}</div></div>
+        <div class="card"><div class="label">المتبقي</div><div class="value" style="color:${remaining > 0 ? '#dc2626' : '#16a34a'}">${remaining.toFixed(2)}</div></div>
+      </div>
     </body>
   </html>`;
+}
+
+async function deleteInvoice(invoiceId) {
+  const { Invoice, ReturnInvoice } = getLocalModels();
+  let inv = null;
+  if (isNumericId(invoiceId)) {
+    const n = Number(String(invoiceId).trim());
+    inv = await Invoice.findOne({ invoiceNumber: n });
+  } else {
+    const validId = toObjectIdString(invoiceId);
+    if (!validId) throw new Error('Invalid invoice ID format');
+    inv = await Invoice.findById(validId);
+  }
+  if (!inv) throw new Error('Invoice not found');
+  // Remove related return invoice if exists
+  await ReturnInvoice.deleteOne({ originalInvoice: inv._id });
+  await Invoice.deleteOne({ _id: inv._id });
+  return { success: true };
 }
 
 module.exports = {
@@ -314,8 +535,10 @@ module.exports = {
   listInvoices,
   getInvoiceById,
   addPaymentToInvoice,
+  updateInvoice,
   updateInvoiceItemsAndNotes,
   archiveInvoice,
   createReturnInvoice,
-  generateInvoicePrintableHtml
+  generateInvoicePrintableHtml,
+  deleteInvoice
 };
