@@ -118,7 +118,7 @@ async function createInvoice(payload) {
 }
 
 async function listInvoices(filters) {
-  const { Invoice, Customer } = getLocalModels();
+  const { Invoice, Customer, Plumber } = getLocalModels();
   const query = {};
   if (filters.archived === true) query.archived = true;
   if (filters.archived === false) query.archived = false;
@@ -129,9 +129,31 @@ async function listInvoices(filters) {
     if (cid) query.customer = Types.ObjectId.createFromHexString(cid);
   }
   // Explicit filter by plumberName (exact, case-insensitive)
+  // If includePlumberAsCustomer is true, match invoices where plumberName matches OR invoice.customer has same phone as plumber
+  let plumberFilterOr = null;
   if (filters.plumberName) {
     const n = String(filters.plumberName || '').trim();
-    if (n) query.plumberName = new RegExp('^' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
+    if (n) {
+      const plumberRx = new RegExp('^' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
+      if (filters.includePlumberAsCustomer) {
+        try {
+          const pl = await Plumber.findOne({ name: plumberRx }).lean();
+          if (pl?.phone) {
+            const custs = await Customer.find({ phone: pl.phone }, { _id: 1 }).lean();
+            const cids = custs.map(c => c._id);
+            plumberFilterOr = [{ plumberName: plumberRx }];
+            if (cids.length > 0) plumberFilterOr.push({ customer: { $in: cids } });
+          } else {
+            plumberFilterOr = [{ plumberName: plumberRx }];
+          }
+        } catch (_e) {
+          plumberFilterOr = [{ plumberName: plumberRx }];
+        }
+      } else {
+        // simple plumber filter
+        query.plumberName = plumberRx;
+      }
+    }
   }
 
   if (filters.search) {
@@ -151,7 +173,31 @@ async function listInvoices(filters) {
     if (/^[a-f0-9]{24}$/i.test(s)) {
       ors.push({ _id: Types.ObjectId.createFromHexString(s) });
     }
-    query.$or = ors;
+    if (plumberFilterOr) {
+      // Combine plumber filter with search using AND of two ORs
+      query.$and = [{ $or: plumberFilterOr }, { $or: ors }];
+    } else {
+      query.$or = ors;
+    }
+  }
+
+  // If we have a plumber combined filter and no text search, apply it now
+  if (plumberFilterOr && !filters.search) {
+    // Preserve any existing fields in query (e.g., archived, customerId) and AND them with our OR
+    if (Object.keys(query).length > 0) {
+      // Extract non-logical fields into an $and with our OR
+      const { $or, $and, ...rest } = query;
+      const andParts = [];
+      if (Object.keys(rest).length > 0) andParts.push(rest);
+      if ($or) andParts.push({ $or });
+      if ($and) andParts.push({ $and });
+      query.$and = [...(query.$and || []), ...andParts, { $or: plumberFilterOr }];
+      // Clean top-level non-logical entries are already in $and
+      for (const k of Object.keys(rest)) delete query[k];
+      delete query.$or; // consolidated
+    } else {
+      query.$or = plumberFilterOr;
+    }
   }
 
   return Invoice.find(query)

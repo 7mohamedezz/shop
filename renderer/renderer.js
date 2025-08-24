@@ -1345,7 +1345,7 @@ async function loadPlumbers() {
       const si = $('#search-input');
       if (si) si.value = '';
       // Defer filtered rendering to the search tab auto-loader
-      window.pendingExplicitSearchFilters = { plumberName: name };
+      window.pendingExplicitSearchFilters = { plumberName: name, includePlumberAsCustomer: true };
       const tab = $$('.tab').find(t => t.getAttribute('data-tab') === 'search');
       if (tab) tab.click();
     } else if (btn.classList.contains('btn-edit')) {
