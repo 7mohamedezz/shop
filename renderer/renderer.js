@@ -462,9 +462,31 @@ if (custNameInput) {
   custNameInput.addEventListener('input', async () => {
     const q = custNameInput.value.trim();
     if (!q) { custSug.style.display = 'none'; custSug.innerHTML=''; return; }
-    const list = await window.api.customers.search(q);
-    if (!list.length) { custSug.style.display='none'; custSug.innerHTML=''; return; }
-    custSug.innerHTML = list.map(c => `<div data-name="${c.name}" data-phone="${c.phone}">${c.name} — ${c.phone}</div>`).join('');
+    // Fetch customers and plumbers in parallel, then merge and dedupe
+    const [custs, plumbs] = await Promise.all([
+      window.api.customers.search(q).catch(() => []),
+      window.api.plumbers.search(q).catch(() => [])
+    ]);
+    const seen = new Set();
+    const merged = [];
+    for (const c of (custs || [])) {
+      const key = (c.phone ? String(c.phone).trim() : '') + '|' + String(c.name || '').trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({ name: c.name, phone: c.phone, kind: 'customer' });
+    }
+    for (const p of (plumbs || [])) {
+      const key = (p.phone ? String(p.phone).trim() : '') + '|' + String(p.name || '').trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({ name: p.name, phone: p.phone || '', kind: 'plumber' });
+    }
+    if (!merged.length) { custSug.style.display='none'; custSug.innerHTML=''; return; }
+    custSug.innerHTML = merged.map(x => {
+      const tag = x.kind === 'plumber' ? '<span style="color:#10b981; margin-right:6px">[سباك]</span>' : '';
+      const phone = x.phone ? ` — ${x.phone}` : '';
+      return `<div data-name="${x.name}" data-phone="${x.phone}">${tag}${x.name}${phone}</div>`;
+    }).join('');
     custSug.style.display = 'block';
   });
   custSug.addEventListener('click', (e) => {
