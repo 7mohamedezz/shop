@@ -124,9 +124,32 @@ async function listInvoices(filters) {
   if (filters.archived === false) query.archived = false;
 
   // Explicit filter by customerId
+  // If includeCustomerAsPlumber is true, match invoices where the customer matches OR plumber has same phone as the customer
+  let customerFilterOr = null;
   if (filters.customerId) {
     const cid = toObjectIdString(filters.customerId);
-    if (cid) query.customer = Types.ObjectId.createFromHexString(cid);
+    if (cid) {
+      if (filters.includeCustomerAsPlumber) {
+        try {
+          const custDoc = await Customer.findById(cid).lean();
+          const base = [{ customer: Types.ObjectId.createFromHexString(cid) }];
+          if (custDoc?.phone) {
+            const plumbers = await (getLocalModels().Plumber.find({ phone: custDoc.phone }, { name: 1 }).lean());
+            const names = plumbers.map(p => p.name).filter(Boolean);
+            if (names.length > 0) {
+              const nameRegexes = names.map(n => new RegExp('^' + String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i'));
+              base.push({ plumberName: { $in: nameRegexes } });
+            }
+          }
+          customerFilterOr = base;
+        } catch (_e) {
+          // Fallback to strict customer filter
+          query.customer = Types.ObjectId.createFromHexString(cid);
+        }
+      } else {
+        query.customer = Types.ObjectId.createFromHexString(cid);
+      }
+    }
   }
   // Explicit filter by plumberName (exact, case-insensitive)
   // If includePlumberAsCustomer is true, match invoices where plumberName matches OR invoice.customer has same phone as plumber
@@ -173,16 +196,19 @@ async function listInvoices(filters) {
     if (/^[a-f0-9]{24}$/i.test(s)) {
       ors.push({ _id: Types.ObjectId.createFromHexString(s) });
     }
-    if (plumberFilterOr) {
-      // Combine plumber filter with search using AND of two ORs
-      query.$and = [{ $or: plumberFilterOr }, { $or: ors }];
+    const andConds = [];
+    if (plumberFilterOr) andConds.push({ $or: plumberFilterOr });
+    if (customerFilterOr) andConds.push({ $or: customerFilterOr });
+    if (andConds.length > 0) {
+      andConds.push({ $or: ors });
+      query.$and = andConds;
     } else {
       query.$or = ors;
     }
   }
 
-  // If we have a plumber combined filter and no text search, apply it now
-  if (plumberFilterOr && !filters.search) {
+  // If we have combined filters (plumber/customer) and no text search, apply them now
+  if ((plumberFilterOr || customerFilterOr) && !filters.search) {
     // Preserve any existing fields in query (e.g., archived, customerId) and AND them with our OR
     if (Object.keys(query).length > 0) {
       // Extract non-logical fields into an $and with our OR
@@ -191,12 +217,21 @@ async function listInvoices(filters) {
       if (Object.keys(rest).length > 0) andParts.push(rest);
       if ($or) andParts.push({ $or });
       if ($and) andParts.push({ $and });
-      query.$and = [...(query.$and || []), ...andParts, { $or: plumberFilterOr }];
+      const ors = [];
+      if (plumberFilterOr) ors.push({ $or: plumberFilterOr });
+      if (customerFilterOr) ors.push({ $or: customerFilterOr });
+      query.$and = [...(query.$and || []), ...andParts, ...ors];
       // Clean top-level non-logical entries are already in $and
       for (const k of Object.keys(rest)) delete query[k];
       delete query.$or; // consolidated
     } else {
-      query.$or = plumberFilterOr;
+      if (plumberFilterOr && customerFilterOr) {
+        query.$and = [{ $or: plumberFilterOr }, { $or: customerFilterOr }];
+      } else if (plumberFilterOr) {
+        query.$or = plumberFilterOr;
+      } else if (customerFilterOr) {
+        query.$or = customerFilterOr;
+      }
     }
   }
 

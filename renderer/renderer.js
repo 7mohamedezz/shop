@@ -1278,7 +1278,7 @@ async function loadCustomers() {
       const si = $('#search-input');
       if (si) si.value = '';
       // Defer filtered rendering to the search tab auto-loader
-      window.pendingExplicitSearchFilters = { customerId: id };
+      window.pendingExplicitSearchFilters = { customerId: id, includeCustomerAsPlumber: true };
       // Switch to search tab to show results
       const tab = $$('.tab').find(t => t.getAttribute('data-tab') === 'search');
       if (tab) tab.click();
