@@ -6,18 +6,23 @@
     "start": "ELECTRON_DISABLE_SANDBOX=1 electron .",
     "dev": "ELECTRON_DISABLE_SANDBOX=1 electron .",
     "build": "electron-builder",
+    "dist": "electron-builder",
     "seed": "node scripts/seed.js",
     "wipe:local": "node scripts/wipe.js --local --yes",
     "wipe:atlas": "node scripts/wipe.js --atlas --yes",
     "wipe:both": "node scripts/wipe.js --both --yes"
   },
   "keywords": [],
-  "author": "",
+  "author": "Mohamed Ezz",
+  "email": "7mohamedezz@gmail.com",
   "license": "MIT",
   "description": "Desktop management system for a plumbing supplies store (Electron + MongoDB/Mongoose)",
   "build": {
-    "appId": "com.example.plumbingshop",
+    "appId": "com.mycompany.plumbingshop",
     "productName": "Plumbing Shop",
+    "directories": {
+      "output": "dist"
+    },
     "files": [
       "main.js",
       "preload.js",
@@ -26,18 +31,15 @@
       "services/**",
       "package.json"
     ],
-    "mac": {
-      "category": "public.app-category.business"
-    },
     "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
+      "target": ["AppImage"],
       "category": "Office"
     },
     "win": {
       "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
     }
   },
   "dependencies": {
