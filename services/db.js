@@ -42,7 +42,8 @@ async function connectAtlasDb(uri) {
   try {
     atlasConn = await mongoose.createConnection(uri, { serverSelectionTimeoutMS: 3000 }).asPromise();
     atlasModels = loadModelsFor(atlasConn);
-  } catch (_e) {
+  } catch (e) {
+    console.error('❌ Failed to connect to Atlas:', e?.message || e);
     atlasConn = null;
     atlasModels = null;
   }

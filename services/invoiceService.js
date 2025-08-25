@@ -68,7 +68,16 @@ async function createInvoice(payload) {
       if (brPercent > 0) discounted = Number((selling * (1 - brPercent / 100)).toFixed(2));
     }
 
-    itemDocs.push({ product: productDoc._id, qty: it.qty, price: selling, buyingPrice: buying, category: categoryRaw, discountedPrice: discounted });
+    itemDocs.push({ 
+      product: productDoc._id, 
+      productName: productDoc?.name || it.name || '',
+      qty: it.qty, 
+      price: selling, 
+      buyingPrice: buying, 
+      category: categoryRaw, 
+      discountedPrice: discounted, 
+      delivered: !!it.delivered 
+    });
     // Decrease stock for sold quantity
     try {
       const qty = Number(it.qty || 0);
@@ -97,6 +106,8 @@ async function createInvoice(payload) {
 
   const baseDoc = {
     customer: customer._id,
+    customerName: customer.name || (payload.customer?.name || ''),
+    customerPhone: customer.phone || (payload.customer?.phone || ''),
     plumberName: payload.plumberName || '',
     items: itemDocs,
     payments,
@@ -122,6 +133,12 @@ async function listInvoices(filters) {
   const query = {};
   if (filters.archived === true) query.archived = true;
   if (filters.archived === false) query.archived = false;
+  // Deleted filter: by default exclude deleted unless includeDeleted is explicitly true
+  if (filters && Object.prototype.hasOwnProperty.call(filters, 'deleted')) {
+    query.deleted = !!filters.deleted;
+  } else if (!filters?.includeDeleted) {
+    query.deleted = false;
+  }
 
   // Explicit filter by customerId
   // If includeCustomerAsPlumber is true, match invoices where the customer matches OR plumber has same phone as the customer
@@ -264,6 +281,15 @@ async function getInvoiceById(id) {
     originalKey = validId;
   }
   if (!inv) return null;
+  // Backfill productName for legacy items lacking the snapshot
+  try {
+    if (Array.isArray(inv.items)) {
+      inv.items = inv.items.map(it => ({
+        ...it,
+        productName: it.productName || (it.product && it.product.name) || ''
+      }));
+    }
+  } catch (_) {}
   const ret = await ReturnInvoice.findOne({ originalInvoice: originalKey }).lean();
   return { ...inv, returnInvoice: ret || null };
 }
@@ -313,6 +339,8 @@ async function updateInvoice(invoiceId, updateData) {
       });
     }
     inv.customer = customer._id;
+    inv.customerName = customer.name || updateData.customer.name || '';
+    inv.customerPhone = customer.phone || updateData.customer.phone || '';
   }
   
   // Update plumber name
@@ -367,11 +395,13 @@ async function updateInvoice(invoiceId, updateData) {
       
       normalized.push({
         product: productDoc?._id,
+        productName: (productDoc?.name || it.name || ''),
         qty: it.qty,
         price: selling,
         buyingPrice: buying,
         category: categoryRaw,
-        discountedPrice: discounted
+        discountedPrice: discounted,
+        delivered: !!it.delivered
       });
     }
     inv.items = normalized;
@@ -448,7 +478,9 @@ async function createReturnInvoice(payload) {
     if (!originalItem && name) {
       const norm = String(name).trim().toLowerCase();
       originalItem = (inv.items || []).find(x => {
-        const xname = (x.product && x.product.name) ? x.product.name : '';
+        const xname = (x.product && x.product.name)
+          ? x.product.name
+          : (x.productName || '');
         return String(xname).trim().toLowerCase() === norm;
       }) || null;
     }
@@ -565,28 +597,30 @@ async function generateInvoicePrintableHtml(invoiceId) {
     </table>
   ` : '';
 
-  // Hide profit and discount percentage in print view
-  // const revenue = (inv.items || []).reduce((s, it) => s + it.qty * (it.discountedPrice ?? it.price), 0);
-  // const cost = (inv.items || []).reduce((s, it) => s + it.qty * (it.buyingPrice ?? 0), 0);
-  // const profit = revenue - cost;
   const discountInfo = '';
 
   const rows = (inv.items || []).map((it, idx) => `
     <tr>
       <td style="text-align:center">${idx + 1}</td>
-      <td>${it.product?.name || ''}</td>
+      <td>${it.product?.name || it.productName || ''}</td>
       <td>${it.category || ''}</td>
       <td style="text-align:center">${it.qty}</td>
       <td style="text-align:right">${((it.discountedPrice ?? it.price)).toFixed(2)}</td>
       <td style="text-align:right">${(it.qty * (it.discountedPrice ?? it.price)).toFixed(2)}</td>
+      <td style="text-align:center">${it.delivered ? '✓' : ''}</td>
     </tr>
   `).join('');
+
+  // Prefer numeric invoiceNumber for display; fallback to short ObjectId tail
+  const displayInvoiceId = (inv.invoiceNumber != null && inv.invoiceNumber !== '')
+    ? `#${inv.invoiceNumber}`
+    : `#${String(inv._id).slice(-6)}`;
 
   return `
   <html lang="ar" dir="rtl">
     <head>
       <meta charset="utf-8" />
-      <title>فاتورة ${inv._id}</title>
+      <title>فاتورة ${displayInvoiceId}</title>
       <style>
         body { font-family: 'Tajawal', 'Cairo', Arial, sans-serif; padding: 16px; direction: rtl; font-size: 11px; }
         h1 { margin: 6px 0; font-size: 16px; }
@@ -610,11 +644,12 @@ async function generateInvoicePrintableHtml(invoiceId) {
       <hr/>
       <div class="grid">
         <div>
-          <div><strong>العميل:</strong> ${inv.customer?.name || ''}</div>
-          <div><strong>الهاتف:</strong> ${inv.customer?.phone || ''}</div>
+          <div><strong>العميل:</strong> ${inv.customerName || inv.customer?.name || ''}</div>
+          <div><strong>الهاتف:</strong> ${inv.customerPhone || inv.customer?.phone || ''}</div>
           <div><strong>السباك:</strong> ${inv.plumberName || ''}${plumberPhone ? ` — هاتف: ${plumberPhone}` : ''}</div>
         </div>
         <div style="text-align:left">
+          <div><strong>رقم الفاتورة:</strong> ${displayInvoiceId}</div>
           <div><strong>التاريخ:</strong> ${dayjs(inv.createdAt).format('YYYY-MM-DD HH:mm')}</div>
           <div><strong>آخر تحديث:</strong> ${dayjs(inv.updatedAt).format('YYYY-MM-DD HH:mm')}</div>
         </div>
@@ -628,8 +663,9 @@ async function generateInvoicePrintableHtml(invoiceId) {
             <th>الصنف</th>
             <th>الفئة</th>
             <th>الكمية</th>
-            <th>سعر البيع</th>
+            <th>السعر</th>
             <th>الإجمالي</th>
+            <th style="width:70px; text-align:center">تم التسليم</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -654,6 +690,36 @@ async function generateInvoicePrintableHtml(invoiceId) {
 }
 
 async function deleteInvoice(invoiceId) {
+  const { Invoice } = getLocalModels();
+  let inv = null;
+  if (isNumericId(invoiceId)) {
+    const n = Number(String(invoiceId).trim());
+    inv = await Invoice.findOneAndUpdate({ invoiceNumber: n }, { deleted: true, archived: false }, { new: true });
+  } else {
+    const validId = toObjectIdString(invoiceId);
+    if (!validId) throw new Error('Invalid invoice ID format');
+    inv = await Invoice.findByIdAndUpdate(validId, { deleted: true, archived: false }, { new: true });
+  }
+  if (!inv) throw new Error('Invoice not found');
+  return inv.toObject();
+}
+
+async function restoreInvoice(invoiceId) {
+  const { Invoice } = getLocalModels();
+  let inv = null;
+  if (isNumericId(invoiceId)) {
+    const n = Number(String(invoiceId).trim());
+    inv = await Invoice.findOneAndUpdate({ invoiceNumber: n }, { deleted: false }, { new: true });
+  } else {
+    const validId = toObjectIdString(invoiceId);
+    if (!validId) throw new Error('Invalid invoice ID format');
+    inv = await Invoice.findByIdAndUpdate(validId, { deleted: false }, { new: true });
+  }
+  if (!inv) throw new Error('Invoice not found');
+  return inv.toObject();
+}
+
+async function hardDeleteInvoice(invoiceId) {
   const { Invoice, ReturnInvoice } = getLocalModels();
   let inv = null;
   if (isNumericId(invoiceId)) {
@@ -665,7 +731,6 @@ async function deleteInvoice(invoiceId) {
     inv = await Invoice.findById(validId);
   }
   if (!inv) throw new Error('Invoice not found');
-  // Remove related return invoice if exists
   await ReturnInvoice.deleteOne({ originalInvoice: inv._id });
   await Invoice.deleteOne({ _id: inv._id });
   return { success: true };
@@ -681,5 +746,7 @@ module.exports = {
   archiveInvoice,
   createReturnInvoice,
   generateInvoicePrintableHtml,
-  deleteInvoice
+  deleteInvoice,
+  restoreInvoice,
+  hardDeleteInvoice
 };

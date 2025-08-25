@@ -6,7 +6,8 @@ contextBridge.exposeInMainWorld('api', {
     search: (prefix) => ipcRenderer.invoke('products:search', prefix),
     list: () => ipcRenderer.invoke('products:list'),
     update: (id, update) => ipcRenderer.invoke('products:update', { id, update }),
-    delete: (id) => ipcRenderer.invoke('products:delete', id)
+    delete: (id) => ipcRenderer.invoke('products:delete', id),
+    lowStock: () => ipcRenderer.invoke('products:lowStock')
   },
   customers: {
     upsert: (data) => ipcRenderer.invoke('customers:upsert', data),
@@ -30,7 +31,9 @@ contextBridge.exposeInMainWorld('api', {
     update: (invoiceId, updateData) => ipcRenderer.invoke('invoices:update', { invoiceId, updateData }),
     updateItemsAndNotes: (invoiceId, items, notes) => ipcRenderer.invoke('invoices:updateItemsAndNotes', { invoiceId, items, notes }),
     archive: (invoiceId, archived) => ipcRenderer.invoke('invoices:archive', invoiceId, archived),
-    delete: (invoiceId) => ipcRenderer.invoke('invoices:delete', invoiceId)
+    delete: (invoiceId) => ipcRenderer.invoke('invoices:delete', invoiceId),
+    restore: (invoiceId) => ipcRenderer.invoke('invoices:restore', invoiceId),
+    hardDelete: (invoiceId) => ipcRenderer.invoke('invoices:hardDelete', invoiceId)
   },
   returns: {
     create: (data) => ipcRenderer.invoke('returns:create', data)

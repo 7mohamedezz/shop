@@ -13,7 +13,8 @@ async function createProduct(data) {
     category: data.category?.trim() || '',
     buyingPrice: data.buyingPrice ?? data.buy ?? 0,
     sellingPrice: data.sellingPrice ?? data.price ?? 0,
-    stock: data.stock ?? 0
+    stock: data.stock ?? 0,
+    reorderLevel: data.reorderLevel ?? 0
   });
   return serialize(created);
 }
@@ -47,10 +48,20 @@ async function deleteProduct(id) {
   return serialize(doc);
 }
 
+async function listLowStockProducts() {
+  const { Product } = getLocalModels();
+  // Products where reorderLevel > 0 and stock <= reorderLevel
+  const docs = await Product.find({ reorderLevel: { $gt: 0 }, $expr: { $lte: ['$stock', '$reorderLevel'] } })
+    .sort({ stock: 1, name: 1 })
+    .lean();
+  return docs.map(serialize);
+}
+
 module.exports = {
   createProduct,
   listProducts,
   searchProductsByNamePrefix,
   updateProduct,
-  deleteProduct
+  deleteProduct,
+  listLowStockProducts
 };

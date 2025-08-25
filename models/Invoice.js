@@ -3,11 +3,14 @@ module.exports = function loadInvoice(connection) {
 
   const InvoiceItemSchema = new Schema({
     product: { type: Types.ObjectId, ref: 'Product', required: true },
+    // Denormalized product name snapshot at the time of invoicing
+    productName: { type: String, default: '' },
     qty: { type: Number, required: true, min: 0 },
     price: { type: Number, required: true, min: 0 },
     buyingPrice: { type: Number, default: 0, min: 0 },
     category: { type: String, default: '' },
-    discountedPrice: { type: Number, default: null }
+    discountedPrice: { type: Number, default: null },
+    delivered: { type: Boolean, default: false }
   }, { _id: false });
 
   const PaymentSchema = new Schema({
@@ -19,6 +22,9 @@ module.exports = function loadInvoice(connection) {
   const InvoiceSchema = new Schema({
     invoiceNumber: { type: Number, unique: true },
     customer: { type: Types.ObjectId, ref: 'Customer', required: true },
+    // Denormalized snapshot of customer at time of invoice
+    customerName: { type: String, default: '' },
+    customerPhone: { type: String, default: '' },
     plumberName: { type: String, default: '' },
     items: { type: [InvoiceItemSchema], default: [] },
     payments: { type: [PaymentSchema], default: [] },
@@ -26,6 +32,7 @@ module.exports = function loadInvoice(connection) {
     remaining: { type: Number, default: 0 },
     notes: { type: String, default: '' },
     archived: { type: Boolean, default: false },
+    deleted: { type: Boolean, default: false },
     discountAbogaliPercent: { type: Number, default: 0, min: 0, max: 100 },
     discountBrPercent: { type: Number, default: 0, min: 0, max: 100 }
   }, { timestamps: true });

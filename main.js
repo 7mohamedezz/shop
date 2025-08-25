@@ -20,9 +20,17 @@ async function createWindow() {
     await connectLocalDb(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/plumbing_shop');
     console.log('✅ Local database connected');
     
-    console.log('☁️ Connecting to Atlas database...');
-    await connectAtlasDb(process.env.MONGODB_ATLAS_URI || '');
-    console.log('✅ Atlas database connected');
+    if (process.env.MONGODB_ATLAS_URI) {
+      console.log('☁️ Connecting to Atlas database...');
+      const atlasConn = await connectAtlasDb(process.env.MONGODB_ATLAS_URI);
+      if (atlasConn) {
+        console.log('✅ Atlas database connected');
+      } else {
+        console.warn('⚠️ Atlas database NOT connected. Verify MONGODB_ATLAS_URI and network/IP access list.');
+      }
+    } else {
+      console.log('☁️ Atlas connection disabled (MONGODB_ATLAS_URI not set)');
+    }
     
     console.log('🔄 Starting background sync...');
     startBackgroundSync();
@@ -37,6 +45,18 @@ async function createWindow() {
         nodeIntegration: false
       }
     });
+
+ipcMain.handle('products:lowStock', async () => {
+  try {
+    console.log('📉 Listing low-stock products');
+    const products = await productService.listLowStockProducts();
+    console.log('✅ Low-stock count', products.length);
+    return products;
+  } catch (error) {
+    console.error('❌ Error listing low-stock products:', error);
+    return { error: true, message: error.message };
+  }
+});
 
     // Enable developer tools for debugging
     mainWindow.webContents.openDevTools();
@@ -286,7 +306,27 @@ ipcMain.handle('invoices:archive', async (_e, invoiceId, archived) => {
 
 ipcMain.handle('invoices:delete', async (_e, invoiceId) => {
   try {
-    const result = await invoiceService.deleteInvoice(invoiceId);
+    const updated = await invoiceService.deleteInvoice(invoiceId);
+    await enqueueSync('Invoice', 'update', { id: invoiceId, update: { deleted: true, archived: false } });
+    return updated;
+  } catch (err) {
+    return { error: true, message: err.message };
+  }
+});
+
+ipcMain.handle('invoices:restore', async (_e, invoiceId) => {
+  try {
+    const updated = await invoiceService.restoreInvoice(invoiceId);
+    await enqueueSync('Invoice', 'update', { id: invoiceId, update: { deleted: false } });
+    return updated;
+  } catch (err) {
+    return { error: true, message: err.message };
+  }
+});
+
+ipcMain.handle('invoices:hardDelete', async (_e, invoiceId) => {
+  try {
+    const result = await invoiceService.hardDeleteInvoice(invoiceId);
     await enqueueSync('Invoice', 'delete', { id: invoiceId });
     return result;
   } catch (err) {

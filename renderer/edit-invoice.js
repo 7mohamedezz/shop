@@ -83,6 +83,7 @@ async function showEditInvoiceForm(invoiceId) {
                   <th style="padding: 8px; border: 1px solid #d1d5db;">الكمية</th>
                   <th style="padding: 8px; border: 1px solid #d1d5db;">سعر البيع</th>
                   <th style="padding: 8px; border: 1px solid #d1d5db;">الفئة</th>
+                  <th style="padding: 8px; border: 1px solid #d1d5db; width: 90px; text-align:center;">تم التسليم</th>
                   <th style="padding: 8px; border: 1px solid #d1d5db;"></th>
                 </tr>
               </thead>
@@ -101,6 +102,9 @@ async function showEditInvoiceForm(invoiceId) {
                     </td>
                     <td style="padding: 8px; border: 1px solid #d1d5db;">
                       <input type="text" data-index="${index}" class="edit-item-category" value="${item.category || ''}" style="width: 100%; border: none; background: transparent;" />
+                    </td>
+                    <td style="padding: 8px; border: 1px solid #d1d5db; text-align:center;">
+                      <input type="checkbox" data-index="${index}" class="edit-item-delivered" ${item.delivered ? 'checked' : ''} />
                     </td>
                     <td style="padding: 8px; border: 1px solid #d1d5db;">
                       <button type="button" class="remove-item-btn" data-index="${index}" style="background: #dc2626; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">حذف</button>
@@ -150,6 +154,9 @@ async function showEditInvoiceForm(invoiceId) {
         <td style="padding: 8px; border: 1px solid #d1d5db;">
           <input type="text" data-index="${newIndex}" class="edit-item-category" placeholder="الفئة" style="width: 100%; border: none; background: transparent;" />
         </td>
+        <td style="padding: 8px; border: 1px solid #d1d5db; text-align:center;">
+          <input type="checkbox" data-index="${newIndex}" class="edit-item-delivered" />
+        </td>
         <td style="padding: 8px; border: 1px solid #d1d5db;">
           <button type="button" class="remove-item-btn" data-index="${newIndex}" style="background: #dc2626; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">حذف</button>
         </td>
@@ -195,13 +202,15 @@ async function showEditInvoiceForm(invoiceId) {
           const qty = Number(row.querySelector('.edit-item-qty').value || 0);
           const price = Number(row.querySelector('.edit-item-price').value || 0);
           const category = row.querySelector('.edit-item-category').value.trim();
+          const delivered = !!row.querySelector('.edit-item-delivered')?.checked;
           
           if (name && qty > 0) {
             updateData.items.push({
               name,
               qty,
               price,
-              category
+              category,
+              delivered
             });
           }
         });

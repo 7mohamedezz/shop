@@ -14,6 +14,7 @@
       <button class="tab active" data-tab="create-invoice">إنشاء فاتورة</button>
       <button class="tab" data-tab="invoices">عرض الفواتير</button>
       <button class="tab" data-tab="products">المنتجات</button>
+      <button class="tab" data-tab="low-stock">قرب النفاد</button>
       <button class="tab" data-tab="customers">العملاء</button>
       <button class="tab" data-tab="search">بحث</button>
     </nav>
@@ -49,7 +50,7 @@
           <div>
             <table class="items-table">
               <thead>
-                <tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th></th></tr>
+                <tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th style="width:48px; text-align:center">تم التسليم</th><th></th></tr>
               </thead>
               <tbody id="items-body"></tbody>
             </table>
@@ -85,6 +86,9 @@
             <option value="active" selected>نشطة</option>
             <option value="archived">مؤرشفة</option>
           </select>
+          <label style="display:flex; align-items:center; gap:6px">
+            <input type="checkbox" id="show-deleted-only" /> عرض المحذوفة فقط
+          </label>
           <button id="refresh-invoices">تحديث</button>
         </div>
         <div id="invoice-list"></div>
@@ -104,12 +108,48 @@
           <input type="text" id="prod-name" placeholder="الاسم" required />
           <input type="text" id="prod-category" placeholder="الفئة (مثال: ابوغالي، BR)" />
           <input type="number" id="prod-buy" placeholder="سعر الشراء" step="0.01" required />
-          <input type="number" id="prod-sell" placeholder="سعر البيع" step="0.01" required />
+          <input type="number" id="prod-sell" placeholder="السعر" step="0.01" required />
           <input type="number" id="prod-stock" placeholder="المخزون" />
+          <input type="number" id="prod-reorder" placeholder="حد إعادة الطلب" />
           <button type="submit">حفظ</button>
         </form>
         <div id="product-message" class="muted" style="margin:6px 0; color:#93c5fd"></div>
-        <div id="product-list"></div>
+        <table class="items-table" id="product-table" style="margin-top:8px">
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th>الفئة</th>
+              <th>سعر الشراء</th>
+              <th>السعر</th>
+              <th>المخزون</th>
+              <th>حد إعادة الطلب</th>
+              <th style="width:160px">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="product-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="low-stock" class="page">
+      <div class="panel">
+        <h2>المنتجات قرب النفاد</h2>
+        <div class="row">
+          <button id="refresh-lowstock">تحديث</button>
+        </div>
+        <table class="items-table" id="lowstock-table" style="margin-top:8px">
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th>الفئة</th>
+              <th>سعر الشراء</th>
+              <th>السعر</th>
+              <th>المخزون</th>
+              <th>حد إعادة الطلب</th>
+            </tr>
+          </thead>
+          <tbody id="lowstock-tbody"></tbody>
+        </table>
       </div>
     </section>
 

@@ -69,6 +69,8 @@ async function displayInvoicesWithFilters(filters = {}) {
       } else if (typeof invoiceId === 'object' && invoiceId.toString) {
         invoiceId = invoiceId.toString();
       }
+      // Prefer numeric invoiceNumber when available for external actions
+      const externalId = (inv.invoiceNumber != null) ? inv.invoiceNumber : invoiceId;
       const card = document.createElement('div');
       card.className = 'list-card';
       const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
@@ -76,16 +78,16 @@ async function displayInvoicesWithFilters(filters = {}) {
         : '';
       card.innerHTML = `
         <div>
-          <div><strong>${inv.customer?.name || ''}</strong> — ${inv.customer?.phone || ''}</div>
+          <div><strong>${inv.customerName || inv.customer?.name || ''}</strong> — ${inv.customerPhone || inv.customer?.phone || ''}</div>
           <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
           <div class="muted">تاريخ الإنشاء: ${new Date(inv.createdAt).toLocaleString()} | آخر تحديث: ${new Date(inv.updatedAt).toLocaleString()}</div>
           <div class="muted">رقم الفاتورة: ${inv.invoiceNumber ?? '—'} | ID: ${invoiceId}</div>
           <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)}</div>
         </div>
         <div>
-          <button type="button" data-id="${invoiceId}" class="btn-view">عرض</button>
-          <button type="button" data-id="${invoiceId}" class="btn-print">طباعة</button>
-          <button type="button" data-id="${invoiceId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
+          <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
+          <button type="button" data-id="${externalId}" class="btn-print">طباعة</button>
+          <button type="button" data-id="${externalId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
         </div>
       `;
       container.appendChild(card);
@@ -103,6 +105,8 @@ async function displayInvoicesWithFilters(filters = {}) {
         try {
           const invoices = await window.api.invoices.list({});
           const inv = invoices.find(x => {
+            // Match by invoiceNumber when provided; otherwise fall back to _id string
+            if (x.invoiceNumber != null) return String(x.invoiceNumber) === String(id);
             let xId = x._id;
             if (typeof xId === 'object' && xId.buffer) xId = Array.from(xId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
             else if (typeof xId === 'object' && xId.toString) xId = xId.toString();
@@ -218,12 +222,17 @@ async function safeApiCall(apiCall, errorContext = '') {
 }
 
 // Tabs
-$$('.tab').forEach(btn => btn.addEventListener('click', () => {
+$$('.tab').forEach(btn => btn.addEventListener('click', async () => {
   $$('.tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   const tab = btn.getAttribute('data-tab');
   $$('.page').forEach(p => p.classList.remove('active'));
   $('#' + tab).classList.add('active');
+  // Lazy-load data for specific tabs
+  try {
+    if (tab === 'products') await loadProducts();
+    if (tab === 'low-stock') await loadLowStockProducts();
+  } catch {}
 }));
 
 // Plumber autocomplete
@@ -295,6 +304,7 @@ function newItemRow() {
     <td><input type="number" class="item-qty" placeholder="الكمية" value="1" step="0.01" min="0" /></td>
     <td><input type="number" class="item-price" placeholder="سعر البيع" step="0.01" min="0" /></td>
     <td class="item-subtotal" style="text-align:center">0.00</td>
+    <td style="text-align:center"><input type="checkbox" class="item-delivered" /></td>
     <td><button type="button" class="remove-item">✕</button></td>
   `;
 
@@ -351,7 +361,8 @@ function newItemRow() {
     qty: Number(qtyInput.value || 0),
     product: selectedProduct?._id || null,
     buyingPrice: selectedProduct?.buy ?? undefined,
-    category: selectedProduct?.category || undefined
+    category: selectedProduct?.category || undefined,
+    delivered: !!tr.querySelector('.item-delivered')?.checked
   });
 
   updateRowSubtotal();
@@ -575,15 +586,16 @@ async function showInvoiceDetail(id) {
     const updatedDate = formatGregorian(inv.updatedAt, false);
     
     // Items table
-    const itemsRows = (inv.items || []).map(it => {
+    const itemsRows = (inv.items || []).map((it, idx) => {
       const itemTotal = (it.qty || 0) * (it.discountedPrice ?? it.price);
       const discountInfo = it.discountedPrice != null ? ` <span style="color:#16a34a">(-${(100 - (it.discountedPrice / it.price * 100)).toFixed(0)}%)</span>` : '';
       return `<tr>
-        <td>${it.product?.name || ''}</td>
+        <td>${it.product?.name || it.productName || ''}</td>
         <td>${it.category || ''}</td>
         <td>${it.qty}</td>
         <td>${(it.discountedPrice ?? it.price).toFixed(2)}${discountInfo}</td>
         <td>${itemTotal.toFixed(2)}</td>
+        <td style="text-align:center"><input type="checkbox" class="delivered-toggle" data-index="${idx}" ${it.delivered ? 'checked' : ''} disabled /></td>
       </tr>`;
     }).join('');
     
@@ -624,8 +636,8 @@ async function showInvoiceDetail(id) {
       <h3>تفاصيل الفاتورة #${invoiceNumberExt || shortId || 'غير محدد'}</h3>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px;">
         <div>
-          <div><strong>العميل:</strong> ${inv.customer?.name || ''}</div>
-          <div><strong>الهاتف:</strong> ${inv.customer?.phone || ''}</div>
+          <div><strong>العميل:</strong> ${inv.customerName || inv.customer?.name || ''}</div>
+          <div><strong>الهاتف:</strong> ${inv.customerPhone || inv.customer?.phone || ''}</div>
           <div><strong>السباك:</strong> ${inv.plumberName || ''}</div>
         </div>
         <div>
@@ -641,7 +653,7 @@ async function showInvoiceDetail(id) {
       
       <h4>الأصناف</h4>
       <table class="items-table inv-items" style="margin-top:8px">
-        <thead><tr><th>الصنف</th><th>الفئة</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th></tr></thead>
+        <thead><tr><th>الصنف</th><th>الفئة</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th style="width:48px; text-align:center">تم التسليم</th></tr></thead>
         <tbody>${itemsRows}</tbody>
       </table>
       
@@ -715,6 +727,8 @@ async function showInvoiceDetail(id) {
   } catch (_) {}
   
   // Add event listeners
+  // Delivered checkboxes are read-only in view mode
+
   $('#btn-edit-invoice').addEventListener('click', async () => {
     await showEditInvoiceForm(invoiceNumberExt ?? idStr);
   });
@@ -931,10 +945,12 @@ async function loadInvoices() {
   console.log('🔄 Loading invoices...');
   const search = $('#invoice-search')?.value?.trim() || '';
   const filter = $('#archive-filter')?.value || 'active';
+  const showDeletedOnly = $('#show-deleted-only')?.checked || false;
   const filters = {};
   if (search) filters.search = normalizeDigits(search);
   if (filter === 'active') filters.archived = false;
   if (filter === 'archived') filters.archived = true;
+  if (showDeletedOnly) filters.deleted = true; // only deleted
   
   console.log('📋 Invoice filters:', filters);
   
@@ -976,22 +992,33 @@ async function loadInvoices() {
       if (!externalId) { console.error('❌ Missing invoice identifier', inv); return; }
       const card = document.createElement('div');
       card.className = 'list-card';
+      if (inv.deleted) {
+        card.style.opacity = '0.7';
+        card.style.border = '1px dashed #ef4444';
+        card.style.background = '#fff7ed';
+      }
       const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
         ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
         : '';
       const returnTotal = (inv.payments || []).filter(p => (p.note || '').trim() === 'مرتجع').reduce((s, p) => s + Number(p.amount || 0), 0);
       card.innerHTML = `
         <div>
-          <div><strong>${inv.customer?.name || ''}</strong> — ${inv.customer?.phone || ''}</div>
+          <div><strong>${inv.customerName || inv.customer?.name || ''}</strong> — ${inv.customerPhone || inv.customer?.phone || ''}</div>
           <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
-          <div class="muted">تاريخ الإنشاء: ${formatGregorian(inv.createdAt, true)} | آخر تحديث: ${formatGregorian(inv.updatedAt, true)}</div>
-          <div class="muted">رقم الفاتورة: ${invoiceNumberExt ?? '—'} | رقم الفاتورة: ${internalId}</div>
+          <div class="muted">${inv.deleted ? 'محذوفة' : (inv.archived ? 'مؤرشفة' : 'نشطة')} | تاريخ الإنشاء: ${formatGregorian(inv.createdAt, true)} | آخر تحديث: ${formatGregorian(inv.updatedAt, true)}</div>
+          <div class="muted">رقم الفاتورة: ${invoiceNumberExt ?? '—'} | ID: ${internalId}</div>
           <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)} | المرتجع: ${currency(returnTotal)}</div>
         </div>
         <div>
-          <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
-          <button type="button" data-id="${externalId}" class="btn-print">طباعة</button>
-          <button type="button" data-id="${externalId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
+          ${inv.deleted ? `
+            <button type="button" data-id="${externalId}" class="btn-restore">استعادة</button>
+            <button type="button" data-id="${externalId}" class="btn-hard-delete" style="background:#dc2626; color:#fff">حذف نهائي</button>
+          ` : `
+            <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
+            <button type="button" data-id="${externalId}" class="btn-print">طباعة</button>
+            <button type="button" data-id="${externalId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
+            <button type="button" data-id="${externalId}" class="btn-delete" style="background:#dc2626; color:#fff">حذف</button>
+          `}
         </div>
       `;
       container.appendChild(card);
@@ -1010,6 +1037,7 @@ async function loadInvoices() {
 
 $('#refresh-invoices').addEventListener('click', loadInvoices);
 $('#archive-filter').addEventListener('change', loadInvoices);
+$('#show-deleted-only')?.addEventListener('change', loadInvoices);
 $('#invoice-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadInvoices(); });
 // Live search invoices as the user types (debounced)
 $('#invoice-search')?.addEventListener('input', debounce(() => {
@@ -1097,6 +1125,43 @@ $('#invoice-list').addEventListener('click', async (e) => {
     } catch (error) {
       console.error('❌ View error:', error);
     }
+  } else if (btn.classList.contains('btn-delete')) {
+    // Soft delete invoice
+    try {
+      const ok = confirm('هل تريد حذف الفاتورة؟ يمكن استعادتها لاحقًا من قائمة المحذوفة.');
+      if (!ok) return;
+      const res = await window.api.invoices.delete(isNumericId(id) ? Number(id) : String(id));
+      if (res && res.error) throw new Error(res.message || 'فشل حذف الفاتورة');
+      await loadInvoices();
+      const panel = $('#invoice-detail');
+      if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+      showErrorMessage('تم حذف الفاتورة', 'success');
+    } catch (error) {
+      console.error('❌ Delete error:', error);
+      showErrorMessage('خطأ في حذف الفاتورة: ' + (error.message || ''));
+    }
+  } else if (btn.classList.contains('btn-restore')) {
+    try {
+      const res = await window.api.invoices.restore(isNumericId(id) ? Number(id) : String(id));
+      if (res && res.error) throw new Error(res.message || 'فشل استعادة الفاتورة');
+      await loadInvoices();
+      showErrorMessage('تمت الاستعادة', 'success');
+    } catch (error) {
+      console.error('❌ Restore error:', error);
+      showErrorMessage('خطأ في الاستعادة: ' + (error.message || ''));
+    }
+  } else if (btn.classList.contains('btn-hard-delete')) {
+    try {
+      const ok = confirm('تحذير: حذف نهائي لا يمكن التراجع عنه. هل أنت متأكد؟');
+      if (!ok) return;
+      const res = await window.api.invoices.hardDelete(isNumericId(id) ? Number(id) : String(id));
+      if (res && res.error) throw new Error(res.message || 'فشل الحذف النهائي');
+      await loadInvoices();
+      showErrorMessage('تم الحذف النهائي', 'success');
+    } catch (error) {
+      console.error('❌ Hard delete error:', error);
+      showErrorMessage('خطأ في الحذف النهائي: ' + (error.message || ''));
+    }
   } else {
     console.log('❓ Unknown button type:', btn.className);
   }
@@ -1144,32 +1209,65 @@ $('#product-search')?.addEventListener('input', debounce(async (e) => {
 }, 250));
 
 function mountProductRow(product) {
-  const row = document.createElement('div');
-  row.className = 'list-card';
+  const row = document.createElement('tr');
 
   function setViewMode(p) {
     row.innerHTML = `
-      <div><strong>${p.name}</strong> — [${p.category || '—'}] — شراء ${currency(p.buyingPrice ?? 0)} | بيع ${currency(p.sellingPrice ?? p.price ?? 0)} | مخزون: ${p.stock}</div>
-      <div>
+      <td>${p.name}</td>
+      <td>${p.category || '—'}</td>
+      <td>${currency(p.buyingPrice ?? 0)}</td>
+      <td>${currency(p.sellingPrice ?? p.price ?? 0)}</td>
+      <td>${p.stock ?? 0}</td>
+      <td>${p.reorderLevel ?? 0}</td>
+      <td>
         <button type="button" data-id="${p._id}" class="btn-edit">تعديل</button>
         <button type="button" data-id="${p._id}" class="btn-delete">حذف</button>
-      </div>
+      </td>
     `;
   }
 
   function setEditMode(p) {
     row.innerHTML = `
-      <div>
-        <input value="${p.name}" class="edit-name" style="width:180px" />
-        <input value="${p.category || ''}" class="edit-category" style="width:120px" />
-        <input type="number" value="${p.buyingPrice ?? 0}" class="edit-buy" step="0.01" style="width:110px" />
-        <input type="number" value="${p.sellingPrice ?? p.price ?? 0}" class="edit-sell" step="0.01" style="width:110px" />
-        <input type="number" value="${p.stock}" class="edit-stock" style="width:90px" />
-      </div>
-      <div>
+      <td>
+        <div style="display:flex; flex-direction:column; gap:4px">
+          <span class="muted" style="font-size:12px">الاسم</span>
+          <input value="${p.name}" class="edit-name" style="width:100%" />
+        </div>
+      </td>
+      <td>
+        <div style="display:flex; flex-direction:column; gap:4px">
+          <span class="muted" style="font-size:12px">الفئة</span>
+          <input value="${p.category || ''}" class="edit-category" style="width:100%" />
+        </div>
+      </td>
+      <td>
+        <div style="display:flex; flex-direction:column; gap:4px">
+          <span class="muted" style="font-size:12px">سعر الشراء</span>
+          <input type="number" value="${p.buyingPrice ?? 0}" class="edit-buy" step="0.01" style="width:100%" />
+        </div>
+      </td>
+      <td>
+        <div style="display:flex; flex-direction:column; gap:4px">
+          <span class="muted" style="font-size:12px">السعر</span>
+          <input type="number" value="${p.sellingPrice ?? p.price ?? 0}" class="edit-sell" step="0.01" style="width:100%" />
+        </div>
+      </td>
+      <td>
+        <div style="display:flex; flex-direction:column; gap:4px">
+          <span class="muted" style="font-size:12px">المخزون</span>
+          <input type="number" value="${p.stock ?? 0}" class="edit-stock" style="width:100%" />
+        </div>
+      </td>
+      <td>
+        <div style="display:flex; flex-direction:column; gap:4px">
+          <span class="muted" style="font-size:12px">حد إعادة الطلب</span>
+          <input type="number" value="${p.reorderLevel ?? 0}" class="edit-reorder" step="1" style="width:100%" />
+        </div>
+      </td>
+      <td>
         <button type="button" data-id="${p._id}" class="btn-save">حفظ</button>
         <button type="button" data-id="${p._id}" class="btn-cancel">إلغاء</button>
-      </div>
+      </td>
     `;
   }
 
@@ -1188,16 +1286,27 @@ function mountProductRow(product) {
       const buyingPrice = Number(row.querySelector('.edit-buy').value || 0);
       const sellingPrice = Number(row.querySelector('.edit-sell').value || 0);
       const stock = Number(row.querySelector('.edit-stock').value || 0);
-      const updated = await window.api.products.update(id, { name, category, buyingPrice, sellingPrice, stock });
+      const reorderLevel = Number(row.querySelector('.edit-reorder').value || 0);
+      const updated = await window.api.products.update(id, { name, category, buyingPrice, sellingPrice, stock, reorderLevel });
       product = updated;
       setViewMode(product);
       const msg = $('#product-message');
       if (msg) { msg.textContent = 'تم التحديث'; setTimeout(() => (msg.textContent = ''), 1500); }
+      // Also refresh low-stock view if present
+      try { await loadLowStockProducts(); } catch {}
     } else if (e.target.classList.contains('btn-delete')) {
-      await window.api.products.delete(id);
-      row.remove();
-      const msg = $('#product-message');
-      if (msg) { msg.textContent = 'تم الحذف'; setTimeout(() => (msg.textContent = ''), 1500); }
+      const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
+      if (!ok) return;
+      try {
+        const res = await window.api.products.delete(id);
+        if (res && res.error) throw new Error(res.message || 'فشل حذف المنتج');
+        row.remove();
+        const msg = $('#product-message');
+        if (msg) { msg.textContent = 'تم الحذف'; setTimeout(() => (msg.textContent = ''), 1500); }
+        try { await loadLowStockProducts(); } catch {}
+      } catch (err) {
+        showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
+      }
     }
   });
 
@@ -1205,15 +1314,42 @@ function mountProductRow(product) {
 }
 
 function renderProductList(list) {
-  const container = $('#product-list');
-  container.innerHTML = '';
-  list.forEach(p => container.appendChild(mountProductRow(p)));
+  const tbody = $('#product-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  list.forEach(p => tbody.appendChild(mountProductRow(p)));
 }
 
 // Update existing loadProducts to use new renderer
 async function loadProducts() {
   const list = await window.api.products.list();
   renderProductList(list);
+}
+
+// Low stock rendering (readonly rows without actions)
+function mountProductRowReadonly(p) {
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td>${p.name}</td>
+    <td>${p.category || '—'}</td>
+    <td>${currency(p.buyingPrice ?? 0)}</td>
+    <td>${currency(p.sellingPrice ?? p.price ?? 0)}</td>
+    <td>${p.stock ?? 0}</td>
+    <td>${p.reorderLevel ?? 0}</td>
+  `;
+  return row;
+}
+
+function renderLowStockList(list) {
+  const tbody = $('#lowstock-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  list.forEach(p => tbody.appendChild(mountProductRowReadonly(p)));
+}
+
+async function loadLowStockProducts() {
+  const list = await window.api.products.lowStock();
+  renderLowStockList(list);
 }
 
 // Customers & Plumbers page
@@ -1626,16 +1762,19 @@ if (productForm) {
         category: $('#prod-category').value.trim(),
         buyingPrice: Number($('#prod-buy').value || 0),
         sellingPrice: Number($('#prod-sell').value || 0),
-        stock: Number($('#prod-stock').value || 0)
+        stock: Number($('#prod-stock').value || 0),
+        reorderLevel: Number($('#prod-reorder').value || 0)
       });
       $('#prod-name').value = '';
       $('#prod-category').value = '';
       $('#prod-buy').value = '';
       $('#prod-sell').value = '';
       $('#prod-stock').value = '';
+      $('#prod-reorder').value = '';
       const msg = $('#product-message');
       if (msg) { msg.textContent = `تم الحفظ: ${created.name}`; setTimeout(() => (msg.textContent = ''), 2000); }
       await loadProducts();
+      try { await loadLowStockProducts(); } catch {}
     } catch (error) {
       console.error('Error creating product:', error);
     }
