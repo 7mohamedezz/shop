@@ -6,6 +6,7 @@ const loadCustomer = require('../models/Customer');
 const loadInvoice = require('../models/Invoice');
 const loadReturnInvoice = require('../models/ReturnInvoice');
 const loadPlumber = require('../models/Plumber');
+const loadCounter = require('../models/Counter');
 
 let localConn = null;
 let atlasConn = null;
@@ -19,7 +20,8 @@ function loadModelsFor(conn) {
     Customer: loadCustomer(conn),
     Invoice: loadInvoice(conn),
     ReturnInvoice: loadReturnInvoice(conn),
-    Plumber: loadPlumber(conn)
+    Plumber: loadPlumber(conn),
+    Counter: loadCounter(conn)
   };
 }
 
@@ -32,6 +34,7 @@ async function connectLocalDb(uri) {
     memoryServer = await MongoMemoryServer.create();
     const memUri = memoryServer.getUri('plumbing_shop');
     localConn = await mongoose.createConnection(memUri, { serverSelectionTimeoutMS: 2500 }).asPromise();
+    console.error('❌ Failed to connect to local:', e?.message || e);
   }
   localModels = loadModelsFor(localConn);
   return localConn;

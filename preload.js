@@ -40,5 +40,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   print: {
     invoice: (invoiceId) => ipcRenderer.invoke('print:invoice', invoiceId)
+  },
+  backup: {
+    run: () => ipcRenderer.invoke('backup:run'),
+    restore: () => ipcRenderer.invoke('backup:restore')
   }
 });

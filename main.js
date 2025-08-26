@@ -1,8 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs').promises;
 require('dotenv').config();
 
-const { connectLocalDb, connectAtlasDb } = require('./services/db');
+const { connectLocalDb, connectAtlasDb, getLocalModels } = require('./services/db');
 const productService = require('./services/productService');
 const customerService = require('./services/customerService');
 const plumberService = require('./services/plumberService');
@@ -45,6 +46,160 @@ async function createWindow() {
         nodeIntegration: false
       }
     });
+
+// Restore IPC: import JSON files from a selected backup directory
+ipcMain.handle('backup:restore', async () => {
+  try {
+    const win = BrowserWindow.getFocusedWindow();
+    const { canceled, filePaths } = await dialog.showOpenDialog(win || null, {
+      title: 'اختر مجلد النسخة للاستراد',
+      buttonLabel: 'اختر هذا المجلد',
+      properties: ['openDirectory']
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { canceled: true };
+
+    const dir = filePaths[0];
+    const readJson = async (name) => {
+      try {
+        const p = path.join(dir, `${name}.json`);
+        const s = await fs.readFile(p, 'utf8');
+        const arr = JSON.parse(s);
+        return Array.isArray(arr) ? arr : [];
+      } catch {
+        return [];
+      }
+    };
+
+    const models = getLocalModels();
+    const collections = [
+      { name: 'products', model: models.Product },
+      { name: 'customers', model: models.Customer },
+      { name: 'plumbers', model: models.Plumber },
+      { name: 'invoices', model: models.Invoice },
+      { name: 'return_invoices', model: models.ReturnInvoice }
+    ];
+
+    const results = {};
+    let maxInvoiceFromDump = 0;
+    for (const { name, model } of collections) {
+      const docs = await readJson(name);
+      if (!docs.length) { results[name] = { matched: 0, upserted: 0 }; continue; }
+
+      // Prepare bulk upserts by _id to avoid duplicates
+      const ops = docs
+        .filter(d => d && d._id)
+        .map(d => {
+          const {_id, ...rest} = d;
+          return {
+            updateOne: {
+              filter: { _id },
+              update: { $set: rest },
+              upsert: true
+            }
+          };
+        });
+      if (!ops.length) { results[name] = { matched: 0, upserted: 0 }; continue; }
+      const r = await model.bulkWrite(ops, { ordered: false });
+      results[name] = { matched: r.matchedCount || 0, upserted: r.upsertedCount || 0 };
+
+      if (name === 'invoices') {
+        for (const d of docs) {
+          if (typeof d.invoiceNumber === 'number') {
+            if (d.invoiceNumber > maxInvoiceFromDump) maxInvoiceFromDump = d.invoiceNumber;
+          }
+        }
+      }
+    }
+
+    // Restore counters: upsert any provided counters, then ensure invoiceNumber seq >= max invoiceNumber from dump
+    const counterDocs = await readJson('counters');
+    if (Array.isArray(counterDocs) && counterDocs.length) {
+      const ops = counterDocs
+        .filter(d => d && d._id)
+        .map(d => ({
+          updateOne: {
+            filter: { _id: d._id },
+            update: { $set: { seq: d.seq || 0 } },
+            upsert: true
+          }
+        }));
+      if (ops.length) await models.Counter.bulkWrite(ops, { ordered: false });
+    }
+    if (maxInvoiceFromDump > 0) {
+      await models.Counter.findOneAndUpdate(
+        { _id: 'invoiceNumber' },
+        { $max: { seq: maxInvoiceFromDump } },
+        { upsert: true }
+      );
+    }
+
+    return { success: true, results };
+  } catch (error) {
+    console.error('❌ Restore error:', error);
+    return { error: true, message: error.message };
+  }
+});
+
+// Backup IPC: export all local DB collections to JSON files in a chosen directory
+ipcMain.handle('backup:run', async () => {
+  try {
+    const win = BrowserWindow.getFocusedWindow();
+    const { canceled, filePaths } = await dialog.showOpenDialog(win || null, {
+      title: 'اختر مجلد النسخة الاحتياطية (USB)',
+      buttonLabel: 'اختر هذا المجلد',
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (canceled || !filePaths || !filePaths[0]) {
+      return { canceled: true };
+    }
+
+    const baseDir = filePaths[0];
+    const ts = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const ms = String(ts.getMilliseconds()).padStart(3, '0');
+    const baseFolder = `PlumbingShopBackup_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}_${ms}`;
+    let outDir = path.join(baseDir, baseFolder);
+    // Ensure unique directory name to avoid accidental overwrites or duplicates
+    let suffix = 2;
+    try {
+      // If exists, keep incrementing suffix
+      // fs.access throws if not exists
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        await fs.access(outDir).then(() => {
+          outDir = path.join(baseDir, `${baseFolder}-${suffix++}`);
+        }).catch(() => { throw new Error('STOP_LOOP'); });
+      }
+    } catch (e) {
+      // Expected to break loop when directory doesn't exist
+      if (e && e.message !== 'STOP_LOOP') {
+        // Unexpected error
+      }
+    }
+    await fs.mkdir(outDir, { recursive: true });
+
+    const models = getLocalModels();
+    const dumpOne = async (name, model) => {
+      const docs = await model.find({}).lean().exec();
+      const file = path.join(outDir, `${name}.json`);
+      await fs.writeFile(file, JSON.stringify(docs, null, 2), 'utf8');
+    };
+
+    await dumpOne('products', models.Product);
+    await dumpOne('customers', models.Customer);
+    await dumpOne('plumbers', models.Plumber);
+    await dumpOne('invoices', models.Invoice);
+    await dumpOne('return_invoices', models.ReturnInvoice);
+    // Dump counters (e.g., invoiceNumber sequence)
+    const counters = await models.Counter.find({}).lean().exec();
+    await fs.writeFile(path.join(outDir, 'counters.json'), JSON.stringify(counters, null, 2), 'utf8');
+
+    return { success: true, directory: outDir };
+  } catch (error) {
+    console.error('❌ Backup error:', error);
+    return { error: true, message: error.message };
+  }
+});
 
 ipcMain.handle('products:lowStock', async () => {
   try {

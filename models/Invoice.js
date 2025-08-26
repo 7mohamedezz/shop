@@ -37,14 +37,20 @@ module.exports = function loadInvoice(connection) {
     discountBrPercent: { type: Number, default: 0, min: 0, max: 100 }
   }, { timestamps: true });
 
-  // Auto-increment invoice number
+  // Auto-increment invoice number using atomic Counter collection
   InvoiceSchema.pre('save', async function (next) {
     if (this.isNew && !this.invoiceNumber) {
       try {
-        const lastInvoice = await this.constructor.findOne({}, {}, { sort: { invoiceNumber: -1 } });
-        this.invoiceNumber = lastInvoice ? lastInvoice.invoiceNumber + 1 : 1001;
+        const Counter = this.constructor.db.model('Counter');
+        const counterDoc = await Counter.findOneAndUpdate(
+          { _id: 'invoiceNumber' },
+          { $inc: { seq: 1 } },
+          { new: true, upsert: true }
+        );
+        const nextSeq = (counterDoc && counterDoc.seq) ? counterDoc.seq : 1001;
+        this.invoiceNumber = nextSeq;
       } catch (error) {
-        console.error('Error generating invoice number:', error);
+        console.error('Error generating invoice number via Counter:', error);
         this.invoiceNumber = Date.now() % 100000; // Fallback
       }
     }

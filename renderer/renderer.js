@@ -51,6 +51,35 @@ async function openEditPersonModal({ title = 'تعديل', name = '', phone = ''
   });
 }
 
+// Restore Backup button handler
+const restoreBtn = document.getElementById('restore-backup-btn');
+if (restoreBtn) {
+  restoreBtn.addEventListener('click', async () => {
+    try {
+      restoreBtn.disabled = true;
+      const originalText = restoreBtn.textContent;
+      restoreBtn.textContent = 'جارٍ الاستعادة...';
+      const res = await window.api.backup.restore();
+      restoreBtn.textContent = originalText;
+      restoreBtn.disabled = false;
+      if (res?.canceled) return;
+      if (res?.error) {
+        showErrorMessage('فشل استعادة النسخة: ' + (res.message || ''));
+      } else {
+        // Summarize results
+        const parts = Object.entries(res.results || {}).map(([k, v]) => `${k}: تم تحديث ${v.matched || 0}، تم إدراج ${v.upserted || 0}`);
+        showErrorMessage('تمت الاستعادة بنجاح.\n' + parts.join('\n'), 'success');
+        // Optionally refresh UI lists
+        try { loadProducts && loadProducts(); } catch {}
+        try { loadInvoices && loadInvoices(); } catch {}
+      }
+    } catch (err) {
+      restoreBtn.disabled = false;
+      showErrorMessage('خطأ أثناء الاستعادة: ' + (err.message || ''));
+    }
+  });
+}
+
 // Display invoices by explicit filters (customerId, plumberName, archived)
 async function displayInvoicesWithFilters(filters = {}) {
   try {
@@ -1043,6 +1072,30 @@ $('#invoice-search').addEventListener('keydown', (e) => { if (e.key === 'Enter')
 $('#invoice-search')?.addEventListener('input', debounce(() => {
   loadInvoices();
 }, 250));
+
+// Backup button handler
+const backupBtn = document.getElementById('backup-btn');
+if (backupBtn) {
+  backupBtn.addEventListener('click', async () => {
+    try {
+      backupBtn.disabled = true;
+      const originalText = backupBtn.textContent;
+      backupBtn.textContent = 'جارٍ النسخ...';
+      const res = await window.api.backup.run();
+      backupBtn.textContent = originalText;
+      backupBtn.disabled = false;
+      if (res?.canceled) return;
+      if (res?.error) {
+        showErrorMessage('فشل إنشاء النسخة الاحتياطية: ' + (res.message || ''));
+      } else {
+        showErrorMessage('تم إنشاء النسخة الاحتياطية في: ' + (res.directory || ''), 'success');
+      }
+    } catch (err) {
+      backupBtn.disabled = false;
+      showErrorMessage('خطأ أثناء النسخ الاحتياطي: ' + (err.message || ''));
+    }
+  });
+}
 
 // Invoice list button handlers
 $('#invoice-list').addEventListener('click', async (e) => {
