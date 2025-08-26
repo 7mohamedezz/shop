@@ -33,23 +33,26 @@
     ],
     "linux": {
       "target": ["AppImage"],
-      "category": "Office"
+      "category": "Office",
+      "icon": "logo.png"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "logo.png"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "logo.png"
     }
   },
   "dependencies": {
     "dayjs": "^1.11.13",
     "dotenv": "^17.2.1",
-    "electron": "^37.3.0",
     "mongodb-memory-server": "^10.2.0",
     "mongoose": "^8.17.1"
   },
   "devDependencies": {
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "electron": "^37.3.0"
   }
 }

@@ -639,6 +639,7 @@ async function generateInvoicePrintableHtml(invoiceId) {
       </style>
     </head>
     <body>
+      <div style="text-align:center; font-size:18px; font-weight:800; margin-bottom:4px">عرض اسعار</div>
       <h1>معرض احمد بدوي</h1>
       <div class="muted">هاتف: 01003771479 | العنوان: الكرنك الجديد / نجع بدران</div>
       <hr/>
@@ -661,7 +662,7 @@ async function generateInvoicePrintableHtml(invoiceId) {
           <tr>
             <th style="width:36px; text-align:center">#</th>
             <th>الصنف</th>
-            <th>الفئة</th>
+            <th>الشركه</th>
             <th>الكمية</th>
             <th>السعر</th>
             <th>الإجمالي</th>
