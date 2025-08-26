@@ -37,9 +37,15 @@ async function createWindow() {
     startBackgroundSync();
     console.log('✅ Background sync started');
 
+    // Resolve icon path for both dev and packaged builds
+    const iconPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'logo.png')
+      : path.join(__dirname, 'logo.png');
+
     mainWindow = new BrowserWindow({
       width: 1280,
       height: 800,
+      icon: iconPath,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,

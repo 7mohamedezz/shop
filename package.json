@@ -29,6 +29,7 @@
       "renderer/**",
       "models/**",
       "services/**",
+      "logo.png",
       "package.json"
     ],
     "linux": {
