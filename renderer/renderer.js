@@ -129,7 +129,10 @@ async function displayInvoicesWithFilters(filters = {}) {
       const id = btn.getAttribute('data-id');
       if (!id) return;
       if (btn.classList.contains('btn-print')) {
-        try { await window.api.print.invoice(id); showErrorMessage('تم إرسال الفاتورة للطباعة', 'success'); } catch (error) { showErrorMessage('خطأ في الطباعة: ' + error.message); }
+        try {
+          await window.api.print.invoice(id, { fontSize: getCurrentFontSize() });
+          showErrorMessage('تم إرسال الفاتورة للطباعة', 'success');
+        } catch (error) { showErrorMessage('خطأ في الطباعة: ' + error.message); }
       } else if (btn.classList.contains('btn-archive')) {
         try {
           const invoices = await window.api.invoices.list({});
@@ -229,6 +232,40 @@ function showErrorMessage(message, type = 'error') {
     }
   }, 5000);
 }
+
+// ===================== UI Font Size Control =====================
+function getStoredFontSize() {
+  const v = localStorage.getItem('uiFontSize');
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(20, Math.max(10, n)) : 14;
+}
+function applyUiFontSize(px) {
+  // Apply base font size for the whole app
+  document.body.style.fontSize = px + 'px';
+}
+function initFontSizeControl() {
+  const input = document.getElementById('ui-font-size');
+  const label = document.getElementById('ui-font-size-val');
+  if (!input || !label) return;
+  const current = getStoredFontSize();
+  input.value = String(current);
+  label.textContent = String(current);
+  applyUiFontSize(current);
+  input.addEventListener('input', () => {
+    const v = Math.min(20, Math.max(10, Number(input.value || 14)));
+    label.textContent = String(v);
+    applyUiFontSize(v);
+    localStorage.setItem('uiFontSize', String(v));
+  });
+}
+function getCurrentFontSize() {
+  return getStoredFontSize();
+}
+
+// Initialize font size on DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+  try { initFontSizeControl(); } catch {}
+});
 
 // Enhanced API call wrapper with error handling
 async function safeApiCall(apiCall, errorContext = '') {
@@ -763,7 +800,7 @@ async function showInvoiceDetail(id) {
   });
   $('#btn-make-return').addEventListener('click', () => buildReturnForm(inv));
   $('#btn-print-invoice').addEventListener('click', async () => {
-    await window.api.print.invoice(invoiceNumberExt ?? idStr);
+    await window.api.print.invoice(invoiceNumberExt ?? idStr, { fontSize: getCurrentFontSize() });
   });
   $('#btn-archive-invoice').addEventListener('click', async () => {
     await window.api.invoices.archive(invoiceNumberExt ?? idStr, !inv.archived);

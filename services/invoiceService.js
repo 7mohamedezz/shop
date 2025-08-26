@@ -525,7 +525,7 @@ async function createReturnInvoice(payload) {
   return doc.toObject();
 }
 
-async function generateInvoicePrintableHtml(invoiceId) {
+async function generateInvoicePrintableHtml(invoiceId, options = {}) {
   console.log('generateInvoicePrintableHtml called with:', { invoiceId, type: typeof invoiceId });
   let inv = null;
   if (isNumericId(invoiceId)) {
@@ -616,26 +616,31 @@ async function generateInvoicePrintableHtml(invoiceId) {
     ? `#${inv.invoiceNumber}`
     : `#${String(inv._id).slice(-6)}`;
 
+  const baseFont = Math.max(8, Math.min(24, Number(options.fontSize || 11)));
+  const h1Size = Math.round(baseFont * 1.45);
+  const h2Size = Math.round(baseFont * 1.27);
+  const h3Size = Math.round(baseFont * 1.18);
+
   return `
   <html lang="ar" dir="rtl">
     <head>
       <meta charset="utf-8" />
       <title>فاتورة ${displayInvoiceId}</title>
       <style>
-        body { font-family: 'Tajawal', 'Cairo', Arial, sans-serif; padding: 16px; direction: rtl; font-size: 11px; }
-        h1 { margin: 6px 0; font-size: 16px; }
-        h2 { margin: 6px 0; font-size: 14px; }
-        h3 { margin: 6px 0; font-size: 13px; }
+        body { font-family: 'Tajawal', 'Cairo', Arial, sans-serif; padding: 16px; direction: rtl; font-size: ${baseFont}px; }
+        h1 { margin: 6px 0; font-size: ${h1Size}px; }
+        h2 { margin: 6px 0; font-size: ${h2Size}px; }
+        h3 { margin: 6px 0; font-size: ${h3Size}px; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
         .muted { color: #666; }
-        table { direction: rtl; font-size: 11px; }
+        table { direction: rtl; font-size: ${baseFont}px; }
         .tbl { width:100%; border-collapse: collapse; }
         .tbl th, .tbl td { border: 1px solid #e5e7eb; padding: 3px 4px; }
         .tbl thead th { background:#f3f4f6; }
         .totals-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-top:12px; }
         .card { background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:8px; }
         .card .label { font-size:10px; color:#6b7280; margin-bottom:4px; }
-        .card .value { font-size:16px; font-weight:700; color:#111827; }
+        .card .value { font-size:${Math.round(baseFont * 1.45)}px; font-weight:700; color:#111827; }
       </style>
     </head>
     <body>
