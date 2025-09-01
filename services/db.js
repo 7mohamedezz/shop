@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const loadProduct = require('../models/Product');
 const loadCustomer = require('../models/Customer');
@@ -12,7 +11,6 @@ let localConn = null;
 let atlasConn = null;
 let localModels = null;
 let atlasModels = null;
-let memoryServer = null;
 
 function loadModelsFor(conn) {
   return {
@@ -28,15 +26,22 @@ function loadModelsFor(conn) {
 async function connectLocalDb(uri) {
   if (localConn) return localConn;
   try {
-    localConn = await mongoose.createConnection(uri, { serverSelectionTimeoutMS: 2500 }).asPromise();
+    console.log('🔄 Attempting to connect to MongoDB Atlas...');
+    localConn = await mongoose.createConnection(uri, { 
+      serverSelectionTimeoutMS: 15000,
+      maxPoolSize: 10,
+      bufferCommands: false,
+      retryWrites: true,
+      w: 'majority'
+    }).asPromise();
+    console.log('✅ Connected to MongoDB Atlas successfully');
+    localModels = loadModelsFor(localConn);
   } catch (err) {
-    // Fallback to in-memory MongoDB for offline-first usage
-    memoryServer = await MongoMemoryServer.create();
-    const memUri = memoryServer.getUri('plumbing_shop');
-    localConn = await mongoose.createConnection(memUri, { serverSelectionTimeoutMS: 2500 }).asPromise();
-    console.error('❌ Failed to connect to local:', e?.message || e);
+    console.error('❌ Failed to connect to MongoDB Atlas:', err?.message || err);
+    console.warn('⚠️ Application will continue without database functionality');
+    // Don't throw error, just return null to indicate no connection
+    return null;
   }
-  localModels = loadModelsFor(localConn);
   return localConn;
 }
 
@@ -54,7 +59,17 @@ async function connectAtlasDb(uri) {
 }
 
 function getLocalModels() {
-  if (!localModels) throw new Error('Local DB not initialized');
+  if (!localModels) {
+    console.warn('⚠️ No database connection available, returning empty models');
+    return {
+      Product: null,
+      Customer: null,
+      Invoice: null,
+      ReturnInvoice: null,
+      Plumber: null,
+      Counter: null
+    };
+  }
   return localModels;
 }
 

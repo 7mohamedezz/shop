@@ -7,7 +7,8 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('products:list'),
     update: (id, update) => ipcRenderer.invoke('products:update', { id, update }),
     delete: (id) => ipcRenderer.invoke('products:delete', id),
-    lowStock: () => ipcRenderer.invoke('products:lowStock')
+    lowStock: () => ipcRenderer.invoke('products:lowStock'),
+    updatePopularity: (id, quantity) => ipcRenderer.invoke('products:updatePopularity', { id, quantity })
   },
   customers: {
     upsert: (data) => ipcRenderer.invoke('customers:upsert', data),

@@ -27,9 +27,10 @@ button:disabled { background: #9ca3af; border-color: #9ca3af; cursor: not-allowe
 .text-center { text-align: center; }
 
 /* Invoice detail: items table alignment */
-.inv-items td:nth-child(3), .inv-items th:nth-child(3) { text-align: center; }
-.inv-items td:nth-child(4), .inv-items th:nth-child(4) { text-align: right; }
-.inv-items td:nth-child(5), .inv-items th:nth-child(5) { text-align: right; }
+.inv-items td:nth-child(3), .inv-items th:nth-child(3) { text-align: center; } /* Category */
+.inv-items td:nth-child(4), .inv-items th:nth-child(4) { text-align: center; } /* Quantity */
+.inv-items td:nth-child(5), .inv-items th:nth-child(5) { text-align: right; } /* Price */
+.inv-items td:nth-child(6), .inv-items th:nth-child(6) { text-align: right; } /* Subtotal */
 
 /* Invoice detail: returns table alignment */
 .inv-returns td:nth-child(2), .inv-returns th:nth-child(2) { text-align: center; }
@@ -45,3 +46,46 @@ button:disabled { background: #9ca3af; border-color: #9ca3af; cursor: not-allowe
 .suggestions div { padding: 6px 8px; cursor: pointer; }
 .suggestions div:hover { background: #f1f5f9; }
 .muted { color: #6b7280; }
+
+/* Category column styling */
+.item-category {
+  background-color: #f9fafb !important;
+  color: #6b7280 !important;
+  font-style: italic;
+  cursor: not-allowed;
+}
+
+/* Edit mode styling for low stock products */
+#lowstock-table input[type="text"],
+#lowstock-table input[type="number"] {
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 14px;
+  background: #ffffff;
+}
+
+#lowstock-table input[type="text"]:focus,
+#lowstock-table input[type="number"]:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+/* Invoice creation table column widths */
+.items-table th:nth-child(1), .items-table td:nth-child(1) { width: 25%; } /* Product name */
+.items-table th:nth-child(2), .items-table td:nth-child(2) { width: 15%; } /* Category */
+.items-table th:nth-child(3), .items-table td:nth-child(3) { width: 12%; } /* Quantity */
+.items-table th:nth-child(4), .items-table td:nth-child(4) { width: 15%; } /* Price */
+.items-table th:nth-child(5), .items-table td:nth-child(5) { width: 15%; } /* Subtotal */
+.items-table th:nth-child(6), .items-table td:nth-child(6) { width: 10%; } /* Delivered */
+.items-table th:nth-child(7), .items-table td:nth-child(7) { width: 8%; } /* Remove button */
+
+/* Low stock table column widths */
+#lowstock-table th:nth-child(1), #lowstock-table td:nth-child(1) { width: 20%; } /* Name */
+#lowstock-table th:nth-child(2), #lowstock-table td:nth-child(2) { width: 15%; } /* Category */
+#lowstock-table th:nth-child(3), #lowstock-table td:nth-child(3) { width: 15%; } /* Buying Price */
+#lowstock-table th:nth-child(4), #lowstock-table td:nth-child(4) { width: 15%; } /* Selling Price */
+#lowstock-table th:nth-child(5), #lowstock-table td:nth-child(5) { width: 12%; } /* Stock */
+#lowstock-table th:nth-child(6), #lowstock-table td:nth-child(6) { width: 12%; } /* Reorder Level */
+#lowstock-table th:nth-child(7), #lowstock-table td:nth-child(7) { width: 11%; } /* Actions */

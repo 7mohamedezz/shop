@@ -17,9 +17,15 @@ async function createWindow() {
   try {
     console.log('🚀 Starting application...');
     
-    console.log('📊 Connecting to local database...');
-    await connectLocalDb(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/plumbing_shop');
-    console.log('✅ Local database connected');
+    console.log('📊 Attempting to connect to MongoDB Atlas...');
+    try {
+      const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_ATLAS_URI || 'mongodb+srv://abdo326302:LISKKI3ujWdRbrZQ@cluster0.gcuboxy.mongodb.net/plumbing_shop';
+      await connectLocalDb(mongoUri);
+      console.log('✅ MongoDB Atlas connected');
+    } catch (error) {
+      console.warn('⚠️ MongoDB Atlas connection failed, continuing without database...');
+      console.warn('⚠️ Error details:', error.message);
+    }
     
     if (process.env.MONGODB_ATLAS_URI) {
       console.log('☁️ Connecting to Atlas database...');
@@ -215,6 +221,18 @@ ipcMain.handle('products:lowStock', async () => {
     return products;
   } catch (error) {
     console.error('❌ Error listing low-stock products:', error);
+    return { error: true, message: error.message };
+  }
+});
+
+ipcMain.handle('products:updatePopularity', async (event, { id, quantity }) => {
+  try {
+    console.log('📈 Updating product popularity:', { id, quantity });
+    const product = await productService.updateProductPopularity(id, quantity);
+    console.log('✅ Product popularity updated');
+    return product;
+  } catch (error) {
+    console.error('❌ Error updating product popularity:', error);
     return { error: true, message: error.message };
   }
 });

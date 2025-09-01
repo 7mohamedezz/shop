@@ -57,7 +57,7 @@
           <div>
             <table class="items-table">
               <thead>
-                <tr><th>المنتج</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th style="width:48px; text-align:center">تم التسليم</th><th></th></tr>
+                <tr><th>المنتج</th><th>الفئة</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th style="width:48px; text-align:center">تم التسليم</th><th></th></tr>
               </thead>
               <tbody id="items-body"></tbody>
             </table>
@@ -144,6 +144,7 @@
         <div class="row">
           <button id="refresh-lowstock">تحديث</button>
         </div>
+        <div id="lowstock-message" class="muted" style="margin:6px 0; color:#93c5fd"></div>
         <table class="items-table" id="lowstock-table" style="margin-top:8px">
           <thead>
             <tr>
@@ -153,6 +154,7 @@
               <th>السعر</th>
               <th>المخزون</th>
               <th>حد إعادة الطلب</th>
+              <th style="width:160px">إجراءات</th>
             </tr>
           </thead>
           <tbody id="lowstock-tbody"></tbody>

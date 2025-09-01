@@ -25,7 +25,14 @@ function normalizeCategoryName(name) {
 }
 
 async function createInvoice(payload) {
-  const { Invoice, Customer, Product } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.Invoice || !models.Customer || !models.Product) {
+    throw new Error('Database connection not available. Cannot create invoice.');
+  }
+  
+  const { Invoice, Customer, Product } = models;
   let customer = await Customer.findOne({ phone: payload.customer.phone });
   if (!customer) {
     customer = await Customer.create({ name: payload.customer.name, phone: payload.customer.phone });
@@ -129,7 +136,14 @@ async function createInvoice(payload) {
 }
 
 async function listInvoices(filters) {
-  const { Invoice, Customer, Plumber } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.Invoice || !models.Customer || !models.Plumber) {
+    throw new Error('Database connection not available. Cannot list invoices.');
+  }
+  
+  const { Invoice, Customer, Plumber } = models;
   const query = {};
   if (filters.archived === true) query.archived = true;
   if (filters.archived === false) query.archived = false;
@@ -148,17 +162,26 @@ async function listInvoices(filters) {
     if (cid) {
       if (filters.includeCustomerAsPlumber) {
         try {
-          const custDoc = await Customer.findById(cid).lean();
+          const models = getLocalModels();
+          if (models && models.Customer) {
+            const custDoc = await models.Customer.findById(cid).lean();
           const base = [{ customer: Types.ObjectId.createFromHexString(cid) }];
           if (custDoc?.phone) {
-            const plumbers = await (getLocalModels().Plumber.find({ phone: custDoc.phone }, { name: 1 }).lean());
-            const names = plumbers.map(p => p.name).filter(Boolean);
-            if (names.length > 0) {
-              const nameRegexes = names.map(n => new RegExp('^' + String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i'));
-              base.push({ plumberName: { $in: nameRegexes } });
+            const models = getLocalModels();
+            if (models && models.Plumber) {
+              const plumbers = await models.Plumber.find({ phone: custDoc.phone }, { name: 1 }).lean();
+              const names = plumbers.map(p => p.name).filter(Boolean);
+              if (names.length > 0) {
+                const nameRegexes = names.map(n => new RegExp('^' + String(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i'));
+                base.push({ plumberName: { $in: nameRegexes } });
+              }
             }
           }
           customerFilterOr = base;
+          } else {
+            // Fallback to strict customer filter
+            query.customer = Types.ObjectId.createFromHexString(cid);
+          }
         } catch (_e) {
           // Fallback to strict customer filter
           query.customer = Types.ObjectId.createFromHexString(cid);
@@ -177,12 +200,17 @@ async function listInvoices(filters) {
       const plumberRx = new RegExp('^' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
       if (filters.includePlumberAsCustomer) {
         try {
-          const pl = await Plumber.findOne({ name: plumberRx }).lean();
-          if (pl?.phone) {
-            const custs = await Customer.find({ phone: pl.phone }, { _id: 1 }).lean();
-            const cids = custs.map(c => c._id);
-            plumberFilterOr = [{ plumberName: plumberRx }];
-            if (cids.length > 0) plumberFilterOr.push({ customer: { $in: cids } });
+          const models = getLocalModels();
+          if (models && models.Plumber && models.Customer) {
+            const pl = await models.Plumber.findOne({ name: plumberRx }).lean();
+            if (pl?.phone) {
+              const custs = await models.Customer.find({ phone: pl.phone }, { _id: 1 }).lean();
+              const cids = custs.map(c => c._id);
+              plumberFilterOr = [{ plumberName: plumberRx }];
+              if (cids.length > 0) plumberFilterOr.push({ customer: { $in: cids } });
+            } else {
+              plumberFilterOr = [{ plumberName: plumberRx }];
+            }
           } else {
             plumberFilterOr = [{ plumberName: plumberRx }];
           }
@@ -199,12 +227,21 @@ async function listInvoices(filters) {
   if (filters.search) {
     const s = String(filters.search).trim();
     const rx = new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    const customers = await Customer.find({ $or: [{ name: rx }, { phone: rx }] }, { _id: 1 }).lean();
-    const customerIds = customers.map(c => c._id);
+    const models = getLocalModels();
+    let customerIds = [];
+    if (models && models.Customer) {
+      const customers = await models.Customer.find({ $or: [{ name: rx }, { phone: rx }] }, { _id: 1 }).lean();
+      customerIds = customers.map(c => c._id);
+    }
+    
     const ors = [
-      { plumberName: rx },
-      { customer: { $in: customerIds } }
+      { plumberName: rx }
     ];
+    
+    if (customerIds && customerIds.length > 0) {
+      ors.push({ customer: { $in: customerIds } });
+    }
+    
     // If search is numeric, allow searching by invoiceNumber
     if (/^\d+$/.test(s)) {
       ors.push({ invoiceNumber: Number(s) });
@@ -260,7 +297,14 @@ async function listInvoices(filters) {
 }
 
 async function getInvoiceById(id) {
-  const { Invoice, ReturnInvoice } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.Invoice || !models.ReturnInvoice) {
+    throw new Error('Database connection not available. Cannot get invoice by ID.');
+  }
+  
+  const { Invoice, ReturnInvoice } = models;
   
   let inv = null;
   let originalKey = null;
@@ -295,7 +339,14 @@ async function getInvoiceById(id) {
 }
 
 async function addPaymentToInvoice(invoiceId, payment) {
-  const { Invoice } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.Invoice) {
+    throw new Error('Database connection not available. Cannot add payment to invoice.');
+  }
+  
+  const { Invoice } = models;
   
   console.log('addPaymentToInvoice called with:', { invoiceId, type: typeof invoiceId });
   let inv = null;
@@ -317,7 +368,14 @@ async function addPaymentToInvoice(invoiceId, payment) {
 }
 
 async function updateInvoice(invoiceId, updateData) {
-  const { Invoice, Product, Customer } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.Invoice || !models.Product || !models.Customer) {
+    throw new Error('Database connection not available. Cannot update invoice.');
+  }
+  
+  const { Invoice, Product, Customer } = models;
   let inv = null;
   if (isNumericId(invoiceId)) {
     const n = Number(String(invoiceId).trim());
@@ -423,7 +481,14 @@ async function updateInvoiceItemsAndNotes(invoiceId, items, notes) {
 }
 
 async function archiveInvoice(invoiceId, archived) {
-  const { Invoice } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.Invoice) {
+    throw new Error('Database connection not available. Cannot archive invoice.');
+  }
+  
+  const { Invoice } = models;
   
   console.log('archiveInvoice called with:', { invoiceId, type: typeof invoiceId, archived });
   let inv = null;
@@ -447,7 +512,14 @@ async function archiveInvoice(invoiceId, archived) {
 }
 
 async function createReturnInvoice(payload) {
-  const { ReturnInvoice, Invoice, Product } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.ReturnInvoice || !models.Invoice || !models.Product) {
+    throw new Error('Database connection not available. Cannot create return invoice.');
+  }
+  
+  const { ReturnInvoice, Invoice, Product } = models;
   let inv = null;
   if (isNumericId(payload.originalInvoice)) {
     const n = Number(String(payload.originalInvoice).trim());
@@ -461,8 +533,16 @@ async function createReturnInvoice(payload) {
   // Ensure we can match by product name when needed
   try { await inv.populate({ path: 'items.product' }); } catch {}
 
+  // Check if there's already a return invoice for this invoice
+  let existingReturnInvoice = await ReturnInvoice.findOne({ originalInvoice: inv._id });
+  console.log('Return invoice check:', { 
+    invoiceId: inv._id, 
+    existingReturnInvoice: existingReturnInvoice ? 'found' : 'not found',
+    existingItemsCount: existingReturnInvoice?.items?.length || 0
+  });
+  
   // Build return items: use original invoice effective price (discountedPrice ?? price)
-  const items = (payload.items || []).map(raw => {
+  const newReturnItems = (payload.items || []).map(raw => {
     const name = (raw.productName || raw.product || '').trim();
     const qty = Number(raw.qty || 0);
     const pid = raw.productId && Types.ObjectId.isValid(raw.productId) ? String(raw.productId) : undefined;
@@ -495,14 +575,70 @@ async function createReturnInvoice(payload) {
       price: effectivePrice
     };
   }).filter(it => it.product && it.qty > 0);
-  const doc = await ReturnInvoice.create({
-    originalInvoice: inv._id,
-    items,
-    createdAt: new Date()
-  });
+
+  let doc;
+  if (existingReturnInvoice) {
+    // Update existing return invoice by adding new items
+    const existingItems = existingReturnInvoice.items || [];
+    console.log('Updating existing return invoice:', { 
+      existingItemsCount: existingItems.length,
+      newItemsCount: newReturnItems.length
+    });
+    
+    // Merge new items with existing ones, combining quantities for same products
+    for (const newItem of newReturnItems) {
+      const existingItemIndex = existingItems.findIndex(existing => {
+        if (newItem.productId && existing.productId) {
+          return String(newItem.productId) === String(existing.productId);
+        }
+        return String(newItem.productName || newItem.product).toLowerCase() === 
+               String(existing.productName || existing.product).toLowerCase();
+      });
+      
+      if (existingItemIndex >= 0) {
+        // Add quantities for existing product
+        const oldQty = existingItems[existingItemIndex].qty;
+        existingItems[existingItemIndex].qty += newItem.qty;
+        console.log('Updated existing item:', { 
+          product: newItem.productName || newItem.product,
+          oldQty,
+          newQty: newItem.qty,
+          totalQty: existingItems[existingItemIndex].qty
+        });
+      } else {
+        // Add new product
+        existingItems.push(newItem);
+        console.log('Added new item:', { 
+          product: newItem.productName || newItem.product,
+          qty: newItem.qty
+        });
+      }
+    }
+    
+    // Update the existing return invoice
+    existingReturnInvoice.items = existingItems;
+    existingReturnInvoice.updatedAt = new Date();
+    doc = await existingReturnInvoice.save();
+    console.log('Updated return invoice:', { 
+      totalItems: doc.items.length,
+      updatedAt: doc.updatedAt
+    });
+  } else {
+    // Create new return invoice
+    console.log('Creating new return invoice with items:', newReturnItems.length);
+    doc = await ReturnInvoice.create({
+      originalInvoice: inv._id,
+      items: newReturnItems,
+      createdAt: new Date()
+    });
+    console.log('Created new return invoice:', { 
+      id: doc._id,
+      itemsCount: doc.items.length
+    });
+  }
   // Increase stock for returned quantities
   try {
-    for (const rit of items) {
+    for (const rit of newReturnItems) {
       const qty = Number(rit.qty || 0);
       if (qty <= 0) continue;
       if (rit.productId && Types.ObjectId.isValid(rit.productId)) {
@@ -516,7 +652,7 @@ async function createReturnInvoice(payload) {
     console.warn('Stock increment on return failed:', e?.message);
   }
   // Deduct the return total from the invoice by adding a payment equal to the return amount
-  const returnTotal = items.reduce((s, it) => s + Number(it.qty || 0) * Number(it.price || 0), 0);
+  const returnTotal = newReturnItems.reduce((s, it) => s + Number(it.qty || 0) * Number(it.price || 0), 0);
   if (returnTotal > 0) {
     inv.payments.push({ amount: returnTotal, date: new Date(), note: 'مرتجع' });
     inv.recomputeTotals();
@@ -547,9 +683,11 @@ async function generateInvoicePrintableHtml(invoiceId, options = {}) {
   let plumberPhone = '';
   try {
     if (inv.plumberName) {
-      const { Plumber } = getLocalModels();
-      const pl = await Plumber.findOne({ name: inv.plumberName }).lean();
-      plumberPhone = pl?.phone || '';
+      const models = getLocalModels();
+      if (models && models.Plumber) {
+        const pl = await models.Plumber.findOne({ name: inv.plumberName }).lean();
+        plumberPhone = pl?.phone || '';
+      }
     }
   } catch (e) {
     console.warn('Could not resolve plumber phone for', inv.plumberName, e?.message);
@@ -573,6 +711,8 @@ async function generateInvoicePrintableHtml(invoiceId, options = {}) {
   const returnSection = inv.returnInvoice ? `
     <h3>مرتجع</h3>
     <div>التاريخ: ${dayjs(inv.returnInvoice.createdAt).format('YYYY-MM-DD')}</div>
+    ${inv.returnInvoice.updatedAt && inv.returnInvoice.updatedAt !== inv.returnInvoice.createdAt ? 
+      `<div>آخر تحديث: ${dayjs(inv.returnInvoice.updatedAt).format('YYYY-MM-DD')}</div>` : ''}
     <table class="tbl">
       <thead>
         <tr>
@@ -696,7 +836,14 @@ async function generateInvoicePrintableHtml(invoiceId, options = {}) {
 }
 
 async function deleteInvoice(invoiceId) {
-  const { Invoice } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.Invoice) {
+    throw new Error('Database connection not available. Cannot delete invoice.');
+  }
+  
+  const { Invoice } = models;
   let inv = null;
   if (isNumericId(invoiceId)) {
     const n = Number(String(invoiceId).trim());
@@ -711,7 +858,14 @@ async function deleteInvoice(invoiceId) {
 }
 
 async function restoreInvoice(invoiceId) {
-  const { Invoice } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.Invoice) {
+    throw new Error('Database connection not available. Cannot restore invoice.');
+  }
+  
+  const { Invoice } = models;
   let inv = null;
   if (isNumericId(invoiceId)) {
     const n = Number(String(invoiceId).trim());
@@ -726,7 +880,14 @@ async function restoreInvoice(invoiceId) {
 }
 
 async function hardDeleteInvoice(invoiceId) {
-  const { Invoice, ReturnInvoice } = getLocalModels();
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.Invoice || !models.ReturnInvoice) {
+    throw new Error('Database connection not available. Cannot hard delete invoice.');
+  }
+  
+  const { Invoice, ReturnInvoice } = models;
   let inv = null;
   if (isNumericId(invoiceId)) {
     const n = Number(String(invoiceId).trim());

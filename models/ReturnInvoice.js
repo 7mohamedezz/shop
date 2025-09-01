@@ -14,7 +14,14 @@ module.exports = function loadReturnInvoice(connection) {
   const ReturnInvoiceSchema = new Schema({
     originalInvoice: { type: Types.ObjectId, ref: 'Invoice', required: true },
     items: { type: [ReturnItemSchema], default: [] },
-    createdAt: { type: Date, default: Date.now }
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
+  });
+
+  // Auto-update updatedAt field on save
+  ReturnInvoiceSchema.pre('save', function(next) {
+    this.updatedAt = new Date();
+    next();
   });
 
   return connection.models.ReturnInvoice || connection.model('ReturnInvoice', ReturnInvoiceSchema);

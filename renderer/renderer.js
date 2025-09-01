@@ -367,6 +367,7 @@ function newItemRow() {
         <div class="suggestions" style="display:none"></div>
       </div>
     </td>
+    <td><input type="text" class="item-category" placeholder="الفئة" readonly /></td>
     <td><input type="number" class="item-qty" placeholder="الكمية" value="1" step="0.01" min="0" /></td>
     <td><input type="number" class="item-price" placeholder="سعر البيع" step="0.01" min="0" /></td>
     <td class="item-subtotal" style="text-align:center">0.00</td>
@@ -375,6 +376,7 @@ function newItemRow() {
   `;
 
   const nameInput = tr.querySelector('.item-name');
+  const categoryInput = tr.querySelector('.item-category');
   const priceInput = tr.querySelector('.item-price');
   const qtyInput = tr.querySelector('.item-qty');
   const subtotalCell = tr.querySelector('.item-subtotal');
@@ -383,7 +385,7 @@ function newItemRow() {
   let selectedProduct = null;
   nameInput.addEventListener('input', async () => {
     const q = nameInput.value.trim();
-    if (!q) { sugg.style.display = 'none'; sugg.innerHTML=''; selectedProduct = null; tr.dataset.basePrice=''; tr.dataset.category=''; recomputeTotals(); return; }
+    if (!q) { sugg.style.display = 'none'; sugg.innerHTML=''; selectedProduct = null; tr.dataset.basePrice=''; tr.dataset.category=''; categoryInput.value=''; recomputeTotals(); return; }
     const list = await window.api.products.search(q);
     if (!list.length) { sugg.style.display = 'none'; sugg.innerHTML=''; selectedProduct = null; return; }
     sugg.innerHTML = list.map(p => `<div data-id="${p._id}" data-price="${p.sellingPrice ?? p.price}" data-buy="${p.buyingPrice ?? 0}" data-category="${p.category || ''}">${p.name} <span style="color:#94a3b8">[${p.category || '—'}]</span> — بيع ${currency(p.sellingPrice ?? p.price)} (شراء ${currency(p.buyingPrice ?? 0)})</div>`).join('');
@@ -395,6 +397,7 @@ function newItemRow() {
     if (!d) return;
     selectedProduct = { _id: d.getAttribute('data-id'), price: Number(d.getAttribute('data-price')), buy: Number(d.getAttribute('data-buy')), category: d.getAttribute('data-category') };
     nameInput.value = d.textContent.split(' [')[0].trim();
+    categoryInput.value = selectedProduct.category || '';
     tr.dataset.basePrice = String(selectedProduct.price);
     tr.dataset.category = selectedProduct.category || '';
     
@@ -427,7 +430,7 @@ function newItemRow() {
     qty: Number(qtyInput.value || 0),
     product: selectedProduct?._id || null,
     buyingPrice: selectedProduct?.buy ?? undefined,
-    category: selectedProduct?.category || undefined,
+    category: categoryInput.value.trim() || selectedProduct?.category || undefined,
     delivered: !!tr.querySelector('.item-delivered')?.checked
   });
 
@@ -1300,21 +1303,38 @@ $('#product-search')?.addEventListener('input', debounce(async (e) => {
 
 function mountProductRow(product) {
   const row = document.createElement('tr');
+  row.innerHTML = `
+    <td>${product.name}</td>
+    <td>${product.category || ''}</td>
+    <td>${currency(product.buyingPrice ?? 0)}</td>
+    <td>${currency(product.sellingPrice ?? product.price ?? 0)}</td>
+    <td>${product.stock ?? 0}</td>
+    <td>${product.reorderLevel ?? 0}</td>
+    <td style="width:160px">
+      <button type="button" class="btn-edit" style="background:#3b82f6; color:#fff; margin-right:4px">تعديل</button>
+      <button type="button" class="btn-delete" style="background:#ef4444; color:#fff">حذف</button>
+    </td>
+  `;
 
-  function setViewMode(p) {
-    row.innerHTML = `
-      <td>${p.name}</td>
-      <td>${p.category || '—'}</td>
-      <td>${currency(p.buyingPrice ?? 0)}</td>
-      <td>${currency(p.sellingPrice ?? p.price ?? 0)}</td>
-      <td>${p.stock ?? 0}</td>
-      <td>${p.reorderLevel ?? 0}</td>
-      <td>
-        <button type="button" data-id="${p._id}" class="btn-edit">تعديل</button>
-        <button type="button" data-id="${p._id}" class="btn-delete">حذف</button>
-      </td>
-    `;
-  }
+  // Add event listeners for edit and delete
+  const editBtn = row.querySelector('.btn-edit');
+  const deleteBtn = row.querySelector('.btn-delete');
+  
+  editBtn.addEventListener('click', () => setEditMode(product));
+  deleteBtn.addEventListener('click', async () => {
+    const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
+    if (!ok) return;
+    try {
+      const res = await window.api.products.delete(product._id);
+      if (res && res.error) throw new Error(res.message || 'فشل حذف المنتج');
+      row.remove();
+      const msg = $('#product-message');
+      if (msg) { msg.textContent = 'تم الحذف'; setTimeout(() => (msg.textContent = ''), 1500); }
+      try { await loadLowStockProducts(); } catch {}
+    } catch (err) {
+      showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
+    }
+  });
 
   function setEditMode(p) {
     row.innerHTML = `
@@ -1359,36 +1379,57 @@ function mountProductRow(product) {
         <button type="button" data-id="${p._id}" class="btn-cancel">إلغاء</button>
       </td>
     `;
-  }
 
-  setViewMode(product);
-
-  row.addEventListener('click', async (e) => {
-    e.preventDefault();
-    const id = (e.target.getAttribute && e.target.getAttribute('data-id')) || product._id;
-    if (e.target.classList.contains('btn-edit')) {
-      setEditMode(product);
-    } else if (e.target.classList.contains('btn-cancel')) {
-      setViewMode(product);
-    } else if (e.target.classList.contains('btn-save')) {
+    const saveBtn = row.querySelector('.btn-save');
+    const cancelBtn = row.querySelector('.btn-cancel');
+    
+    saveBtn.addEventListener('click', async () => {
       const name = row.querySelector('.edit-name').value.trim();
       const category = row.querySelector('.edit-category').value.trim();
       const buyingPrice = Number(row.querySelector('.edit-buy').value || 0);
       const sellingPrice = Number(row.querySelector('.edit-sell').value || 0);
       const stock = Number(row.querySelector('.edit-stock').value || 0);
       const reorderLevel = Number(row.querySelector('.edit-reorder').value || 0);
-      const updated = await window.api.products.update(id, { name, category, buyingPrice, sellingPrice, stock, reorderLevel });
-      product = updated;
-      setViewMode(product);
-      const msg = $('#product-message');
-      if (msg) { msg.textContent = 'تم التحديث'; setTimeout(() => (msg.textContent = ''), 1500); }
-      // Also refresh low-stock view if present
-      try { await loadLowStockProducts(); } catch {}
-    } else if (e.target.classList.contains('btn-delete')) {
+      
+      try {
+        const updated = await window.api.products.update(p._id, { name, category, buyingPrice, sellingPrice, stock, reorderLevel });
+        Object.assign(p, updated);
+        setViewMode(p);
+        const msg = $('#product-message');
+        if (msg) { msg.textContent = 'تم التحديث'; setTimeout(() => (msg.textContent = ''), 1500); }
+        try { await loadLowStockProducts(); } catch {}
+      } catch (err) {
+        showErrorMessage('تعذر تحديث المنتج: ' + (err.message || ''));
+      }
+    });
+    
+    cancelBtn.addEventListener('click', () => setViewMode(p));
+  }
+
+  function setViewMode(p) {
+    row.innerHTML = `
+      <td>${p.name}</td>
+      <td>${p.category || ''}</td>
+      <td>${currency(p.buyingPrice ?? 0)}</td>
+      <td>${currency(p.sellingPrice ?? p.price ?? 0)}</td>
+      <td>${p.stock ?? 0}</td>
+      <td>${p.reorderLevel ?? 0}</td>
+      <td style="width:160px">
+        <button type="button" class="btn-edit" style="background:#3b82f6; color:#fff; margin-right:4px">تعديل</button>
+        <button type="button" class="btn-delete" style="background:#ef4444; color:#fff">حذف</button>
+      </td>
+    `;
+    
+    // Re-add event listeners
+    const editBtn = row.querySelector('.btn-edit');
+    const deleteBtn = row.querySelector('.btn-delete');
+    
+    editBtn.addEventListener('click', () => setEditMode(p));
+    deleteBtn.addEventListener('click', async () => {
       const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
       if (!ok) return;
       try {
-        const res = await window.api.products.delete(id);
+        const res = await window.api.products.delete(p._id);
         if (res && res.error) throw new Error(res.message || 'فشل حذف المنتج');
         row.remove();
         const msg = $('#product-message');
@@ -1397,8 +1438,8 @@ function mountProductRow(product) {
       } catch (err) {
         showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
       }
-    }
-  });
+    });
+  }
 
   return row;
 }
@@ -1416,7 +1457,7 @@ async function loadProducts() {
   renderProductList(list);
 }
 
-// Low stock rendering (readonly rows without actions)
+// Low stock rendering with edit functionality
 function mountProductRowReadonly(p) {
   const row = document.createElement('tr');
   row.innerHTML = `
@@ -1426,7 +1467,115 @@ function mountProductRowReadonly(p) {
     <td>${currency(p.sellingPrice ?? p.price ?? 0)}</td>
     <td>${p.stock ?? 0}</td>
     <td>${p.reorderLevel ?? 0}</td>
+    <td style="width:160px">
+      <button type="button" class="btn-edit" style="background:#3b82f6; color:#fff; margin-right:4px">تعديل</button>
+      <button type="button" class="btn-delete" style="background:#dc2626; color:#fff">حذف</button>
+    </td>
   `;
+  
+  // Add event listeners for edit and delete
+  const editBtn = row.querySelector('.btn-edit');
+  const deleteBtn = row.querySelector('.btn-delete');
+  
+  editBtn.addEventListener('click', () => setEditMode(p));
+  deleteBtn.addEventListener('click', async () => {
+        const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
+        if (!ok) return;
+        try {
+          const res = await window.api.products.delete(p._id);
+          if (res && res.error) throw new Error(res.message || 'فشل حذف المنتج');
+          row.remove();
+          // Show success message
+          const msg = $('#lowstock-message');
+          if (msg) { msg.textContent = 'تم حذف المنتج بنجاح'; setTimeout(() => (msg.textContent = ''), 2000); }
+          // Refresh the low stock list
+          try { await loadLowStockProducts(); } catch {}
+        } catch (err) {
+          showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
+        }
+      });
+  
+  function setEditMode(product) {
+    row.innerHTML = `
+      <td><input type="text" class="edit-name" value="${product.name}" style="width:100%; border:none; background:transparent" /></td>
+      <td><input type="text" class="edit-category" value="${product.category || ''}" style="width:100%; border:none; background:transparent" /></td>
+      <td><input type="number" class="edit-buy" value="${product.buyingPrice ?? 0}" step="0.01" min="0" style="width:100%; border:none; background:transparent" /></td>
+      <td><input type="number" class="edit-sell" value="${product.sellingPrice ?? product.price ?? 0}" step="0.01" min="0" style="width:100%; border:none; background:transparent" /></td>
+      <td><input type="number" class="edit-stock" value="${product.stock ?? 0}" step="0.01" min="0" style="width:100%; border:none; background:transparent" /></td>
+      <td><input type="number" class="edit-reorder" value="${product.reorderLevel ?? 0}" step="0.01" min="0" style="width:100%; border:none; background:transparent" /></td>
+      <td style="width:160px">
+        <button type="button" class="btn-save" style="background:#10b981; color:#fff; margin-right:4px">حفظ</button>
+        <button type="button" class="btn-cancel" style="background:#6b7280; color:#fff">إلغاء</button>
+      </td>
+    `;
+    
+    // Add event listeners for save and cancel
+    const saveBtn = row.querySelector('.btn-save');
+    const cancelBtn = row.querySelector('.btn-cancel');
+    
+    saveBtn.addEventListener('click', async () => {
+      const name = row.querySelector('.edit-name').value.trim();
+      const category = row.querySelector('.edit-category').value.trim();
+      const buyingPrice = Number(row.querySelector('.edit-buy').value || 0);
+      const sellingPrice = Number(row.querySelector('.edit-sell').value || 0);
+      const stock = Number(row.querySelector('.edit-stock').value || 0);
+      const reorderLevel = Number(row.querySelector('.edit-reorder').value || 0);
+      
+      try {
+        const updated = await window.api.products.update(p._id, { name, category, buyingPrice, sellingPrice, stock, reorderLevel });
+        // Update the product object with new data
+        Object.assign(p, updated);
+        setViewMode(p);
+        // Show success message
+        const msg = $('#lowstock-message');
+        if (msg) { msg.textContent = `تم تحديث المنتج: ${updated.name}`; setTimeout(() => (msg.textContent = ''), 2000); }
+        // Refresh the low stock list to reflect changes
+        try { await loadLowStockProducts(); } catch {}
+      } catch (err) {
+        showErrorMessage('تعذر تحديث المنتج: ' + (err.message || ''));
+      }
+    });
+    
+    cancelBtn.addEventListener('click', () => setViewMode(product));
+  }
+  
+  function setViewMode(product) {
+    row.innerHTML = `
+      <td>${product.name}</td>
+      <td>${product.category || '—'}</td>
+      <td>${currency(product.buyingPrice ?? 0)}</td>
+      <td>${currency(product.sellingPrice ?? product.price ?? 0)}</td>
+      <td>${product.stock ?? 0}</td>
+      <td>${product.reorderLevel ?? 0}</td>
+      <td style="width:160px">
+        <button type="button" class="btn-edit" style="background:#3b82f6; color:#fff; margin-right:4px">تعديل</button>
+        <button type="button" class="btn-delete" style="background:#dc2626; color:#fff">حذف</button>
+      </td>
+    `;
+    
+    // Re-attach event listeners
+    const editBtn = row.querySelector('.btn-edit');
+    const deleteBtn = row.querySelector('.btn-delete');
+    
+    editBtn.addEventListener('click', () => setEditMode(product));
+    deleteBtn.addEventListener('click', async () => {
+      const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
+      if (!ok) return;
+      try {
+        const res = await window.api.products.delete(p._id);
+        if (res && res.error) throw new Error(res.message || 'فشل حذف المنتج');
+        row.remove();
+        // Show success message
+        const msg = $('#lowstock-message');
+        if (msg) { msg.textContent = 'تم حذف المنتج بنجاح'; setTimeout(() => (msg.textContent = ''), 2000); }
+        // Refresh the low stock list
+        try { await loadLowStockProducts(); } catch {}
+      } catch (err) {
+        showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
+      }
+    });
+  }
+  
   return row;
 }
 
@@ -1441,6 +1590,23 @@ async function loadLowStockProducts() {
   const list = await window.api.products.lowStock();
   renderLowStockList(list);
 }
+
+// Add refresh button functionality for low stock products
+document.addEventListener('DOMContentLoaded', () => {
+  const refreshBtn = $('#refresh-lowstock');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      try {
+        await loadLowStockProducts();
+        const msg = $('#lowstock-message');
+        if (msg) { msg.textContent = 'تم تحديث القائمة'; setTimeout(() => (msg.textContent = ''), 1500); }
+      } catch (error) {
+        console.error('Error refreshing low stock products:', error);
+        showErrorMessage('تعذر تحديث قائمة المنتجات قرب النفاد');
+      }
+    });
+  }
+});
 
 // Customers & Plumbers page
 const customerForm = $('#customer-form');

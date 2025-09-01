@@ -1,0 +1,10 @@
+[33m85065c0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m test
+[33m97e27e5[m deleting scripts
+[33m67bad87[m feat(font-size): add UI font size control and apply to printed invoice\n\n- Add slider in renderer to adjust/persist UI font size\n- Pass fontSize via IPC (preload/main) to print handler\n- Scale printable HTML CSS in invoiceService based on fontSize\n- Update all print triggers to include current font size
+[33m246d4e5[m -c
+[33m0c05614[m update invoice print
+[33m51ed8b3[m Build: set app icon to logo.png for linux/win/mac via electron-builder.
+[33m467d4f6[m chore(build): add dist script and set electron-builder targets (appId, output=dist, win nsis, linux AppImage, mac dmg)
+[33m1f905ec[m remove .env
+[33m6140092[m docs: add README with setup, run, build, features, troubleshooting
+[33mb20098d[m UI: add 'Show deleted only' invoices toggle + restore/hard-delete; confirm before deleting product; invoice list styling tweaks
