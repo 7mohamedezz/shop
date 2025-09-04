@@ -90,18 +90,27 @@ A comprehensive desktop management system for a plumbing supplies store built wi
 
 ### Environment Configuration
 
-Create a `.env` file in the root directory with the following variables:
+Create a `.env` file in the root directory with the following variables. You can choose one or both database connections based on your needs:
 
 ```env
-# MongoDB Atlas Connection (Primary Database)
+# Option 1: Local MongoDB Connection
+MONGODB_URI=mongodb://localhost:27017/plumbing_shop
+
+# Option 2: MongoDB Atlas Cloud Connection
 MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/database_name
 
-# Alternative MongoDB Atlas Connection (Optional - for sync)
+# Option 3: Both Local and Cloud (for sync between databases)
+MONGODB_URI=mongodb://localhost:27017/plumbing_shop
 MONGODB_ATLAS_URI=mongodb+srv://username:password@cluster.mongodb.net/database_name
-
-# Local MongoDB Connection (Optional - for development)
-MONGODB_LOCAL_URI=mongodb://localhost:27017/plumbing_shop
 ```
+
+**Configuration Options:**
+
+1. **Local MongoDB Only**: Use `MONGODB_URI` with local MongoDB connection
+2. **Cloud MongoDB Only**: Use `MONGODB_URI` with MongoDB Atlas connection  
+3. **Both Local and Cloud**: Use both `MONGODB_URI` (local) and `MONGODB_ATLAS_URI` (cloud) for data synchronization
+
+**Note**: If you configure both connections, the system will automatically sync data between your local and cloud databases.
 
 #### Getting MongoDB Atlas Connection String:
 
