@@ -54,34 +54,6 @@ async function openEditPersonModal({ title = 'تعديل', name = '', phone = ''
   });
 }
 
-// Restore Backup button handler
-const restoreBtn = document.getElementById('restore-backup-btn');
-if (restoreBtn) {
-  restoreBtn.addEventListener('click', async () => {
-    try {
-      restoreBtn.disabled = true;
-      const originalText = restoreBtn.textContent;
-      restoreBtn.textContent = 'جارٍ الاستعادة...';
-      const res = await window.api.backup.restore();
-      restoreBtn.textContent = originalText;
-      restoreBtn.disabled = false;
-      if (res?.canceled) return;
-      if (res?.error) {
-        showErrorMessage('فشل استعادة النسخة: ' + (res.message || ''));
-      } else {
-        // Summarize results
-        const parts = Object.entries(res.results || {}).map(([k, v]) => `${k}: تم تحديث ${v.matched || 0}، تم إدراج ${v.upserted || 0}`);
-        showErrorMessage('تمت الاستعادة بنجاح.\n' + parts.join('\n'), 'success');
-        // Optionally refresh UI lists
-        try { loadProducts && loadProducts(); } catch {}
-        try { loadInvoices && loadInvoices(); } catch {}
-      }
-    } catch (err) {
-      restoreBtn.disabled = false;
-      showErrorMessage('خطأ أثناء الاستعادة: ' + (err.message || ''));
-    }
-  });
-}
 
 // Display invoices by explicit filters (customerId, plumberName, archived)
 async function displayInvoicesWithFilters(filters = {}) {
@@ -119,7 +91,6 @@ async function displayInvoicesWithFilters(filters = {}) {
         <div>
           <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
           <button type="button" data-id="${externalId}" class="btn-print">طباعة</button>
-          <button type="button" data-id="${externalId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
         </div>
       `;
       container.appendChild(card);
@@ -136,25 +107,6 @@ async function displayInvoicesWithFilters(filters = {}) {
           await window.api.print.invoice(id, { fontSize: getCurrentFontSize() });
           showErrorMessage('تم إرسال الفاتورة للطباعة', 'success');
         } catch (error) { showErrorMessage('خطأ في الطباعة: ' + error.message); }
-      } else if (btn.classList.contains('btn-archive')) {
-        try {
-          const invoices = await window.api.invoices.list({});
-          const inv = invoices.find(x => {
-            // Match by invoiceNumber when provided; otherwise fall back to _id string
-            if (x.invoiceNumber != null) return String(x.invoiceNumber) === String(id);
-            let xId = x._id;
-            if (typeof xId === 'object' && xId.buffer) xId = Array.from(xId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
-            else if (typeof xId === 'object' && xId.toString) xId = xId.toString();
-            return String(xId) === String(id);
-          });
-          if (inv) {
-            await window.api.invoices.archive(String(id), !inv.archived);
-            await displayInvoicesWithFilters(filters);
-            showErrorMessage(inv.archived ? 'تم إلغاء الأرشفة' : 'تم الأرشفة', 'success');
-          }
-        } catch (error) {
-          showErrorMessage('خطأ في الأرشفة: ' + error.message);
-        }
       } else if (btn.classList.contains('btn-view')) {
         try {
           await showInvoiceDetail(id);
@@ -319,37 +271,18 @@ async function safeApiCall(apiCall, errorContext = '', loadingElement = null) {
 
 // ===================== UI Font Size Control =====================
 function getStoredFontSize() {
-  const v = localStorage.getItem('uiFontSize');
+  const v = localStorage.getItem('app-font-size') || localStorage.getItem('uiFontSize');
   const n = Number(v);
-  return Number.isFinite(n) ? Math.min(20, Math.max(10, n)) : 14;
+  return Number.isFinite(n) ? Math.min(24, Math.max(12, n)) : 16;
 }
 function applyUiFontSize(px) {
   // Apply base font size for the whole app
   document.body.style.fontSize = px + 'px';
 }
-function initFontSizeControl() {
-  const input = document.getElementById('ui-font-size');
-  const label = document.getElementById('ui-font-size-val');
-  if (!input || !label) return;
-  const current = getStoredFontSize();
-  input.value = String(current);
-  label.textContent = String(current);
-  applyUiFontSize(current);
-  input.addEventListener('input', () => {
-    const v = Math.min(20, Math.max(10, Number(input.value || 14)));
-    label.textContent = String(v);
-    applyUiFontSize(v);
-    localStorage.setItem('uiFontSize', String(v));
-  });
-}
 function getCurrentFontSize() {
   return getStoredFontSize();
 }
 
-// Initialize font size on DOM ready
-document.addEventListener('DOMContentLoaded', () => {
-  try { initFontSizeControl(); } catch {}
-});
 
 // Enhanced API call wrapper with error handling
 async function safeApiCall(apiCall, errorContext = '') {
@@ -382,6 +315,12 @@ $$('.tab').forEach(btn => btn.addEventListener('click', async () => {
   try {
     if (tab === 'products') await loadProducts();
     if (tab === 'low-stock') await loadLowStockProducts();
+    if (tab === 'create-invoice') loadDefaultDiscounts();
+    if (tab === 'settings') loadSettings();
+    
+    // Ensure font size is maintained across tab switches
+    const currentFontSize = getStoredFontSize();
+    applyUiFontSize(currentFontSize);
   } catch {}
 }));
 
@@ -444,7 +383,9 @@ function applyDiscountsToAllRows() {
 // Invoice form state
 function newItemRow() {
   const tr = document.createElement('tr');
+  const rowNumber = $('#items-body').children.length + 1;
   tr.innerHTML = `
+    <td style="text-align:center; font-weight:bold; color:var(--primary-600)">#${rowNumber}</td>
     <td>
       <div class="autocomplete">
         <input type="text" class="item-name" placeholder="اسم المنتج" />
@@ -495,6 +436,7 @@ function newItemRow() {
 
   tr.querySelector('.remove-item').addEventListener('click', () => {
     tr.remove();
+    updateRowNumbers();
     recomputeTotals();
   });
 
@@ -534,7 +476,22 @@ function newPaymentRow() {
   return tr;
 }
 
-$('#add-item').addEventListener('click', () => { $('#items-body').appendChild(newItemRow()); });
+// Function to update row numbers when rows are added/removed
+function updateRowNumbers() {
+  const rows = $('#items-body').children;
+  for (let i = 0; i < rows.length; i++) {
+    const rowNumber = i + 1;
+    const numberCell = rows[i].querySelector('td:first-child');
+    if (numberCell) {
+      numberCell.textContent = `#${rowNumber}`;
+    }
+  }
+}
+
+$('#add-item').addEventListener('click', () => { 
+  $('#items-body').appendChild(newItemRow()); 
+  updateRowNumbers();
+});
 $('#add-payment').addEventListener('click', () => { $('#payments-body').appendChild(newPaymentRow()); });
 
 // Re-apply discounts when discount fields change
@@ -863,11 +820,10 @@ async function showInvoiceDetail(id) {
     </div>
     
     <div class="invoice-actions">
-      <button id="btn-edit-invoice" data-id="${invoiceNumberExt ?? idStr}">تعديل الفاتورة</button>
+      <button id="btn-edit-invoice" class="btn-edit" data-id="${invoiceNumberExt ?? idStr}">تعديل الفاتورة</button>
       <button id="btn-make-return" data-id="${invoiceNumberExt ?? idStr}">إرجاع</button>
       <button id="btn-print-invoice" data-id="${invoiceNumberExt ?? idStr}">طباعة الفاتورة</button>
-      <button id="btn-archive-invoice" data-id="${invoiceNumberExt ?? idStr}" style="background-color:${inv.archived ? '#16a34a' : '#dc2626'}">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
-      <button id="btn-delete-invoice" data-id="${invoiceNumberExt ?? idStr}" style="background-color:#dc2626; color:#fff">حذف الفاتورة</button>
+      <button id="btn-delete-invoice" class="btn-delete" data-id="${invoiceNumberExt ?? idStr}">حذف الفاتورة</button>
     </div>
     
     <div id="return-form" style="display:none; margin-top:16px"></div>
@@ -890,11 +846,6 @@ async function showInvoiceDetail(id) {
   $('#btn-make-return').addEventListener('click', () => buildReturnForm(inv));
   $('#btn-print-invoice').addEventListener('click', async () => {
     await window.api.print.invoice(invoiceNumberExt ?? idStr, { fontSize: getCurrentFontSize() });
-  });
-  $('#btn-archive-invoice').addEventListener('click', async () => {
-    await window.api.invoices.archive(invoiceNumberExt ?? idStr, !inv.archived);
-    await loadInvoices();
-    await showInvoiceDetail(invoiceNumberExt ?? idStr);
   });
   $('#btn-delete-invoice').addEventListener('click', async () => {
     const externalId = invoiceNumberExt ?? idStr;
@@ -963,9 +914,6 @@ function buildReturnForm(inv) {
   const mount = $('#return-form');
   mount.innerHTML = `
     <h4>إنشاء مرتجع</h4>
-    <div style="margin-bottom:8px">
-      <button id="add-return-row" type="button">إضافة صنف مرتجع</button>
-    </div>
     <table class="items-table">
       <thead>
         <tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th></th></tr>
@@ -973,9 +921,25 @@ function buildReturnForm(inv) {
       <tbody id="return-body"></tbody>
     </table>
     <div style="margin-top:8px; text-align:left"><strong>الإجمالي:</strong> <span id="return-total">0.00</span></div>
-    <button id="submit-return">حفظ المرتجع</button>
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
+      <button id="add-return-row" type="button">إضافة صنف مرتجع</button>
+      <button id="submit-return">حفظ المرتجع</button>
+    </div>
   `;
   mount.style.display = 'block';
+  
+  // Auto-scroll to the return form
+  setTimeout(() => {
+    try {
+      mount.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+      // Fallback scroll
+      window.scrollTo({ 
+        top: mount.offsetTop - 100, 
+        behavior: 'smooth' 
+      });
+    }
+  }, 100);
 
   function recomputeReturnTotal() {
     let total = 0;
@@ -1099,12 +1063,9 @@ function buildReturnForm(inv) {
 async function loadInvoices() {
   if (DEBUG_MODE) console.log('🔄 Loading invoices...');
   const search = $('#invoice-search')?.value?.trim() || '';
-  const filter = $('#archive-filter')?.value || 'active';
   const showDeletedOnly = $('#show-deleted-only')?.checked || false;
   const filters = {};
   if (search) filters.search = normalizeDigits(search);
-  if (filter === 'active') filters.archived = false;
-  if (filter === 'archived') filters.archived = true;
   if (showDeletedOnly) filters.deleted = true; // only deleted
   
   if (DEBUG_MODE) console.log('📋 Invoice filters:', filters);
@@ -1179,17 +1140,16 @@ async function loadInvoices() {
           <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
           <div class="muted">${inv.deleted ? 'محذوفة' : (inv.archived ? 'مؤرشفة' : 'نشطة')} | تاريخ الإنشاء: ${formatGregorian(inv.createdAt, true)} | آخر تحديث: ${formatGregorian(inv.updatedAt, true)}</div>
           <div class="muted">رقم الفاتورة: ${invoiceNumberExt ?? '—'} | ID: ${internalId}</div>
-          <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)} | المرتجع: ${currency(returnTotal)}</div>
+          <div class="muted">الإجمالي: ${currency(inv.total)} | المرتجع: ${currency(returnTotal)} | المتبقي: ${currency(inv.remaining)}</div>
         </div>
         <div>
           ${inv.deleted ? `
             <button type="button" data-id="${externalId}" class="btn-restore">استعادة</button>
-            <button type="button" data-id="${externalId}" class="btn-hard-delete" style="background:#dc2626; color:#fff">حذف نهائي</button>
+            <button type="button" data-id="${externalId}" class="btn-delete btn-hard-delete">حذف نهائي</button>
           ` : `
             <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
             <button type="button" data-id="${externalId}" class="btn-print">طباعة</button>
-            <button type="button" data-id="${externalId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
-            <button type="button" data-id="${externalId}" class="btn-delete" style="background:#dc2626; color:#fff">حذف</button>
+            <button type="button" data-id="${externalId}" class="btn-delete">حذف</button>
           `}
         </div>
       `;
@@ -1208,7 +1168,6 @@ async function loadInvoices() {
 }
 
 $('#refresh-invoices').addEventListener('click', loadInvoices);
-$('#archive-filter').addEventListener('change', loadInvoices);
 $('#show-deleted-only')?.addEventListener('change', loadInvoices);
 $('#invoice-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadInvoices(); });
 // Live search invoices as the user types (debounced)
@@ -1216,29 +1175,6 @@ $('#invoice-search')?.addEventListener('input', debounce(() => {
   loadInvoices();
 }, 250));
 
-// Backup button handler
-const backupBtn = document.getElementById('backup-btn');
-if (backupBtn) {
-  backupBtn.addEventListener('click', async () => {
-    try {
-      backupBtn.disabled = true;
-      const originalText = backupBtn.textContent;
-      backupBtn.textContent = 'جارٍ النسخ...';
-      const res = await window.api.backup.run();
-      backupBtn.textContent = originalText;
-      backupBtn.disabled = false;
-      if (res?.canceled) return;
-      if (res?.error) {
-        showErrorMessage('فشل إنشاء النسخة الاحتياطية: ' + (res.message || ''));
-      } else {
-        showErrorMessage('تم إنشاء النسخة الاحتياطية في: ' + (res.directory || ''), 'success');
-      }
-    } catch (err) {
-      backupBtn.disabled = false;
-      showErrorMessage('خطأ أثناء النسخ الاحتياطي: ' + (err.message || ''));
-    }
-  });
-}
 
 // Invoice list button handlers
 $('#invoice-list').addEventListener('click', async (e) => {
@@ -1267,35 +1203,6 @@ $('#invoice-list').addEventListener('click', async (e) => {
       if (DEBUG_MODE) console.log('✅ Print completed');
     } catch (error) {
       console.error('❌ Print error:', error);
-    }
-  } else if (btn.classList.contains('btn-archive')) {
-    if (DEBUG_MODE) console.log('📁 Archive button clicked');
-    try {
-      const invoices = await window.api.invoices.list({});
-      const inv = invoices.find(x => {
-        if (isNumericId(id)) {
-          return Number(x.invoiceNumber) === Number(id);
-        }
-        // compare by internal _id string
-        let xId = x._id;
-        if (typeof xId === 'object' && xId.buffer) {
-          xId = Array.from(xId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
-        } else if (typeof xId === 'object' && xId.toString) {
-          xId = xId.toString();
-        } else {
-          xId = String(xId);
-        }
-        return String(xId) === String(id);
-      });
-      if (inv) {
-        if (DEBUG_MODE) console.log('Archiving invoice with ID:', id, 'Type:', typeof id);
-        await window.api.invoices.archive(isNumericId(id) ? Number(id) : String(id), !inv.archived);
-        await loadInvoices();
-        await showInvoiceDetail(isNumericId(id) ? Number(id) : String(id));
-        if (DEBUG_MODE) console.log('✅ Archive completed');
-      }
-    } catch (error) {
-      console.error('❌ Archive error:', error);
     }
   } else if (btn.classList.contains('btn-edit')) {
     if (DEBUG_MODE) console.log('✏️ Edit button clicked for invoice:', id);
@@ -1414,8 +1321,8 @@ function mountProductRow(product) {
     <td>${product.stock ?? 0}</td>
     <td>${product.reorderLevel ?? 0}</td>
     <td style="width:160px">
-      <button type="button" class="btn-edit" style="background:#3b82f6; color:#fff; margin-right:4px">تعديل</button>
-      <button type="button" class="btn-delete" style="background:#ef4444; color:#fff">حذف</button>
+      <button type="button" class="btn-edit">تعديل</button>
+      <button type="button" class="btn-delete">حذف</button>
     </td>
   `;
 
@@ -1518,8 +1425,8 @@ function mountProductRow(product) {
       <td>${p.stock ?? 0}</td>
       <td>${p.reorderLevel ?? 0}</td>
       <td style="width:160px">
-        <button type="button" class="btn-edit" style="background:#3b82f6; color:#fff; margin-right:4px">تعديل</button>
-        <button type="button" class="btn-delete" style="background:#ef4444; color:#fff">حذف</button>
+        <button type="button" class="btn-edit">تعديل</button>
+        <button type="button" class="btn-delete">حذف</button>
       </td>
     `;
     
@@ -1571,8 +1478,8 @@ function mountProductRowReadonly(p) {
     <td>${p.stock ?? 0}</td>
     <td>${p.reorderLevel ?? 0}</td>
     <td style="width:160px">
-      <button type="button" class="btn-edit" style="background:#3b82f6; color:#fff; margin-right:4px">تعديل</button>
-      <button type="button" class="btn-delete" style="background:#dc2626; color:#fff">حذف</button>
+      <button type="button" class="btn-edit">تعديل</button>
+      <button type="button" class="btn-delete">حذف</button>
     </td>
   `;
   
@@ -1651,8 +1558,8 @@ function mountProductRowReadonly(p) {
       <td>${product.stock ?? 0}</td>
       <td>${product.reorderLevel ?? 0}</td>
       <td style="width:160px">
-        <button type="button" class="btn-edit" style="background:#3b82f6; color:#fff; margin-right:4px">تعديل</button>
-        <button type="button" class="btn-delete" style="background:#dc2626; color:#fff">حذف</button>
+        <button type="button" class="btn-edit">تعديل</button>
+        <button type="button" class="btn-delete">حذف</button>
       </td>
     `;
     
@@ -1957,7 +1864,6 @@ async function displaySearchResults(searchTerm = '') {
         <div>
           <button type="button" data-id="${invoiceId}" class="btn-view">عرض</button>
           <button type="button" data-id="${invoiceId}" class="btn-print">طباعة</button>
-          <button type="button" data-id="${invoiceId}" class="btn-archive">${inv.archived ? 'إلغاء الأرشفة' : 'أرشفة'}</button>
         </div>
       `;
       container.appendChild(card);
@@ -1982,27 +1888,6 @@ async function displaySearchResults(searchTerm = '') {
         } catch (error) {
           console.error('❌ Print error:', error);
           showErrorMessage('خطأ في الطباعة: ' + error.message);
-        }
-      } else if (btn.classList.contains('btn-archive')) {
-        try {
-          const invoices = await window.api.invoices.list({});
-          const inv = invoices.find(x => {
-            let xId = x._id;
-            if (typeof xId === 'object' && xId.buffer) {
-              xId = Array.from(xId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
-            } else if (typeof xId === 'object' && xId.toString) {
-              xId = xId.toString();
-            }
-            return String(xId) === String(id);
-          });
-          if (inv) {
-            await window.api.invoices.archive(String(id), !inv.archived);
-            await displaySearchResults($('#search-input').value.trim());
-            showErrorMessage(inv.archived ? 'تم إلغاء الأرشفة' : 'تم الأرشفة', 'success');
-          }
-        } catch (error) {
-          console.error('❌ Archive error:', error);
-          showErrorMessage('خطأ في الأرشفة: ' + error.message);
         }
       } else if (btn.classList.contains('btn-edit')) {
         try {
@@ -2140,9 +2025,108 @@ if (productForm) {
   });
 }
 
+// Function to check database status and show error if both are down
+async function checkDatabaseStatus() {
+  try {
+    // Try to make a simple API call to test database connectivity
+    await window.api.products.list();
+    return true; // Database is working
+  } catch (error) {
+    console.error('Database connectivity check failed:', error);
+    return false; // Database is down
+  }
+}
+
+// Function to show big database error message
+function showDatabaseError() {
+  const errorHtml = `
+    <div id="database-error-overlay" style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    ">
+      <div style="
+        background: #dc2626;
+        color: white;
+        padding: 40px;
+        border-radius: 16px;
+        text-align: center;
+        max-width: 600px;
+        margin: 20px;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+      ">
+        <div style="font-size: 64px; margin-bottom: 20px;">⚠️</div>
+        <h1 style="font-size: 32px; margin: 0 0 20px 0; font-weight: bold;">خطأ في قاعدة البيانات</h1>
+        <p style="font-size: 18px; margin: 0 0 20px 0; line-height: 1.6;">
+          لا يمكن الاتصال بقاعدة البيانات المحلية أو السحابية.<br>
+          يرجى التحقق من اتصال الإنترنت وإعادة تشغيل التطبيق.
+        </p>
+        <div style="
+          background: rgba(255, 255, 255, 0.1);
+          padding: 20px;
+          border-radius: 8px;
+          margin: 20px 0;
+          font-size: 14px;
+        ">
+          <strong>خطوات الحل:</strong><br>
+          1. تحقق من اتصال الإنترنت<br>
+          2. أعد تشغيل التطبيق<br>
+          3. إذا استمرت المشكلة، اتصل بالدعم الفني
+        </div>
+        <button onclick="location.reload()" style="
+          background: white;
+          color: #dc2626;
+          border: none;
+          padding: 12px 24px;
+          border-radius: 8px;
+          font-size: 16px;
+          font-weight: bold;
+          cursor: pointer;
+          margin-top: 10px;
+        ">إعادة المحاولة</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.insertAdjacentHTML('beforeend', errorHtml);
+}
+
 // Wait for DOM to be ready
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   if (DEBUG_MODE) console.log('DOM loaded, initializing app...');
+  
+  // Check database status first
+  const dbWorking = await checkDatabaseStatus();
+  if (!dbWorking) {
+    showDatabaseError();
+    return; // Don't continue with normal initialization
+  }
+  
+  // Set up periodic database health check (every 30 seconds)
+  setInterval(async () => {
+    const dbWorking = await checkDatabaseStatus();
+    if (!dbWorking) {
+      // Only show error if it's not already showing
+      if (!document.getElementById('database-error-overlay')) {
+        showDatabaseError();
+      }
+    }
+  }, 30000);
+  
+  // Initialize invoice form with first row
+  const itemsBody = $('#items-body');
+  if (itemsBody && itemsBody.children.length === 0) {
+    itemsBody.appendChild(newItemRow());
+    updateRowNumbers();
+  }
   
   // Test if basic elements exist
   const invoiceList = $('#invoice-list');
@@ -2154,6 +2138,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (invoiceList) {
     invoiceList.innerHTML = '<div style="color: green; padding: 10px; border: 2px solid green;">✓ Frontend loaded successfully - Testing invoice loading...</div>';
   }
+  
+  // Initialize font size
+  initializeFontSize();
+  
+  // Load default discount values
+  loadDefaultDiscounts();
   
   // Initial boot
   try {
@@ -2185,3 +2175,160 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 });
+
+// Settings functionality
+document.addEventListener('DOMContentLoaded', () => {
+  // Settings tab functionality
+  const settingsTab = $$('.tab').find(t => t.getAttribute('data-tab') === 'settings');
+  if (settingsTab) {
+    settingsTab.addEventListener('click', () => {
+      loadSettings();
+    });
+  }
+
+  // Settings backup button
+  const settingsBackupBtn = $('#settings-backup-btn');
+  if (settingsBackupBtn) {
+    settingsBackupBtn.addEventListener('click', async () => {
+      try {
+        showLoadingState(settingsBackupBtn, 'جاري إنشاء النسخة...');
+        const result = await window.api.backup.create();
+        hideLoadingState(settingsBackupBtn, 'نسخة احتياطية');
+        showErrorMessage('تم إنشاء النسخة الاحتياطية بنجاح', 'success');
+      } catch (error) {
+        hideLoadingState(settingsBackupBtn, 'نسخة احتياطية');
+        showErrorMessage('خطأ في إنشاء النسخة الاحتياطية: ' + error.message);
+      }
+    });
+  }
+
+  // Settings restore button
+  const settingsRestoreBtn = $('#settings-restore-btn');
+  if (settingsRestoreBtn) {
+    settingsRestoreBtn.addEventListener('click', async () => {
+      try {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json';
+        fileInput.onchange = async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          
+          try {
+            showLoadingState(settingsRestoreBtn, 'جاري الاستعادة...');
+            const result = await window.api.backup.restore(file.path);
+            hideLoadingState(settingsRestoreBtn, 'استعادة نسخة');
+            showErrorMessage('تم استعادة النسخة الاحتياطية بنجاح', 'success');
+            // Reload the application
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
+          } catch (error) {
+            hideLoadingState(settingsRestoreBtn, 'استعادة نسخة');
+            showErrorMessage('خطأ في استعادة النسخة الاحتياطية: ' + error.message);
+          }
+        };
+        fileInput.click();
+      } catch (error) {
+        showErrorMessage('خطأ في استعادة النسخة الاحتياطية: ' + error.message);
+      }
+    });
+  }
+
+  // Settings font size control
+  const settingsFontSize = $('#settings-font-size');
+  const settingsFontSizeValue = $('#settings-font-size-value');
+  if (settingsFontSize && settingsFontSizeValue) {
+    settingsFontSize.addEventListener('input', (e) => {
+      const size = e.target.value;
+      settingsFontSizeValue.textContent = size + 'px';
+      applyUiFontSize(size);
+      // Save to localStorage with consistent key
+      localStorage.setItem('app-font-size', size);
+      // Also save to old key for backward compatibility
+      localStorage.setItem('uiFontSize', size);
+    });
+  }
+
+  // Save discounts button
+  const saveDiscountsBtn = $('#save-discounts-btn');
+  if (saveDiscountsBtn) {
+    saveDiscountsBtn.addEventListener('click', async () => {
+      try {
+        const brDiscount = $('#br-discount').value;
+        const aboghaliDiscount = $('#aboghali-discount').value;
+        
+        // Save to localStorage
+        localStorage.setItem('br-discount', brDiscount);
+        localStorage.setItem('aboghali-discount', aboghaliDiscount);
+        
+        showErrorMessage('تم حفظ الخصومات بنجاح', 'success');
+      } catch (error) {
+        showErrorMessage('خطأ في حفظ الخصومات: ' + error.message);
+      }
+    });
+  }
+});
+
+// Load settings function
+async function loadSettings() {
+  try {
+    // Load font size
+    const savedFontSize = getStoredFontSize();
+    const settingsFontSize = $('#settings-font-size');
+    const settingsFontSizeValue = $('#settings-font-size-value');
+    if (settingsFontSize && settingsFontSizeValue) {
+      settingsFontSize.value = savedFontSize;
+      settingsFontSizeValue.textContent = savedFontSize + 'px';
+    }
+
+    // Load discounts
+    const brDiscount = localStorage.getItem('br-discount') || '0';
+    const aboghaliDiscount = localStorage.getItem('aboghali-discount') || '0';
+    const brDiscountInput = $('#br-discount');
+    const aboghaliDiscountInput = $('#aboghali-discount');
+    if (brDiscountInput) brDiscountInput.value = brDiscount;
+    if (aboghaliDiscountInput) aboghaliDiscountInput.value = aboghaliDiscount;
+  } catch (error) {
+    if (DEBUG_MODE) console.error('Error loading settings:', error);
+  }
+}
+
+// Load default discount values into invoice form
+function loadDefaultDiscounts() {
+  try {
+    const brDiscount = localStorage.getItem('br-discount') || '0';
+    const aboghaliDiscount = localStorage.getItem('aboghali-discount') || '0';
+    
+    const brDiscountInput = $('#discount-br');
+    const aboghaliDiscountInput = $('#discount-abogali');
+    
+    if (brDiscountInput) brDiscountInput.value = brDiscount;
+    if (aboghaliDiscountInput) aboghaliDiscountInput.value = aboghaliDiscount;
+    
+    // Apply discounts to existing rows
+    applyDiscountsToAllRows();
+  } catch (error) {
+    if (DEBUG_MODE) console.error('Error loading default discounts:', error);
+  }
+}
+
+// Initialize font size on app startup
+function initializeFontSize() {
+  try {
+    const savedFontSize = getStoredFontSize();
+    applyUiFontSize(savedFontSize);
+    
+    // Update settings font size control if it exists
+    const settingsFontSize = $('#settings-font-size');
+    const settingsFontSizeValue = $('#settings-font-size-value');
+    if (settingsFontSize && settingsFontSizeValue) {
+      settingsFontSize.value = savedFontSize;
+      settingsFontSizeValue.textContent = savedFontSize + 'px';
+    }
+    
+    if (DEBUG_MODE) console.log('Font size initialized to:', savedFontSize + 'px');
+  } catch (error) {
+    if (DEBUG_MODE) console.error('Error initializing font size:', error);
+  }
+}

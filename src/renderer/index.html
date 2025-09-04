@@ -10,7 +10,7 @@
 <body>
   <header>
     <div class="header-content">
-      <h1>متجر السباكة</h1>
+      <h1>معرض احمد بدوي</h1>
       <nav role="navigation" aria-label="التنقل الرئيسي">
         <div class="nav-tabs">
           <button class="tab active" data-tab="create-invoice" aria-label="إنشاء فاتورة جديدة">
@@ -31,20 +31,9 @@
           <button class="tab" data-tab="search" aria-label="البحث في الفواتير">
             <span>بحث</span>
           </button>
-        </div>
-        <div class="header-actions">
-          <button id="backup-btn" class="action-btn backup-btn" aria-label="إنشاء نسخة احتياطية">
-            <span>نسخة احتياطية</span>
+          <button class="tab" data-tab="settings" aria-label="الإعدادات">
+            <span>الإعدادات</span>
           </button>
-          <button id="restore-backup-btn" class="action-btn restore-btn" aria-label="استعادة نسخة احتياطية">
-            <span>استعادة نسخة</span>
-          </button>
-          <div class="font-size-control">
-            <label for="ui-font-size" class="font-size-label">حجم الخط</label>
-            <input type="range" id="ui-font-size" min="10" max="20" step="1" value="14" 
-                   aria-label="تغيير حجم الخط" />
-            <span id="ui-font-size-val" class="font-size-value" aria-live="polite">14</span>
-          </div>
         </div>
       </nav>
     </div>
@@ -80,7 +69,7 @@
           <div>
             <table class="items-table">
               <thead>
-                <tr><th>المنتج</th><th>الفئة</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th style="width:48px; text-align:center">تم التسليم</th><th></th></tr>
+                <tr><th>الرقم</th><th>المنتج</th><th>الفئة</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th style="width:48px; text-align:center">تم التسليم</th><th></th></tr>
               </thead>
               <tbody id="items-body"></tbody>
             </table>
@@ -111,11 +100,6 @@
         <h2>قائمة الفواتير</h2>
         <div class="row">
           <input type="text" id="invoice-search" placeholder="بحث بالعميل أو السباك أو الهاتف" />
-          <select id="archive-filter">
-            <option value="all">الكل</option>
-            <option value="active" selected>نشطة</option>
-            <option value="archived">مؤرشفة</option>
-          </select>
           <label style="display:flex; align-items:center; gap:6px">
             <input type="checkbox" id="show-deleted-only" /> عرض المحذوفة فقط
           </label>
@@ -231,6 +215,47 @@
           <button id="clear-search-btn">عرض الكل</button>
         </div>
         <div id="search-results"></div>
+      </div>
+    </section>
+
+    <section id="settings" class="page">
+      <div class="panel">
+        <h2>الإعدادات</h2>
+        
+        <!-- Backup and Restore Section -->
+        <div class="settings-section">
+          <h3>النسخ الاحتياطية</h3>
+          <div class="row">
+            <button id="settings-backup-btn" class="btn-edit">نسخة احتياطية</button>
+            <button id="settings-restore-btn" class="btn-print">استعادة نسخة</button>
+          </div>
+        </div>
+
+        <!-- Font Size Section -->
+        <div class="settings-section">
+          <h3>حجم الخط</h3>
+          <div class="row">
+            <label for="settings-font-size">حجم الخط:</label>
+            <input type="range" id="settings-font-size" min="12" max="24" value="16" />
+            <span id="settings-font-size-value">16px</span>
+          </div>
+        </div>
+
+        <!-- Default Discounts Section -->
+        <div class="settings-section">
+          <h3>الخصومات الافتراضية</h3>
+          <div class="row">
+            <label for="br-discount">خصم BR (%):</label>
+            <input type="number" id="br-discount" min="0" max="100" step="0.1" value="0" />
+          </div>
+          <div class="row">
+            <label for="aboghali-discount">خصم ابوغالي (%):</label>
+            <input type="number" id="aboghali-discount" min="0" max="100" step="0.1" value="0" />
+          </div>
+          <div class="row">
+            <button id="save-discounts-btn" class="btn-edit">حفظ الخصومات</button>
+          </div>
+        </div>
       </div>
     </section>
   </main>

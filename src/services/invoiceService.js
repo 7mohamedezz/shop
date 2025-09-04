@@ -53,19 +53,11 @@ async function createInvoice(payload) {
     if (!productDoc) {
       productDoc = await Product.findOne({ name: it.name });
     }
-    if (!productDoc) {
-      productDoc = await Product.create({
-        name: it.name,
-        category: it.category || '',
-        buyingPrice: it.buyingPrice ?? 0,
-        sellingPrice: it.price ?? it.sellingPrice ?? 0,
-        stock: 0
-      });
-    }
+    // Note: We don't auto-create products anymore - only use existing products from database
 
-    const selling = it.price ?? it.sellingPrice ?? productDoc.sellingPrice ?? 0;
-    const buying = it.buyingPrice ?? productDoc.buyingPrice ?? 0;
-    const categoryRaw = (it.category ?? productDoc.category ?? '').trim();
+    const selling = it.price ?? it.sellingPrice ?? (productDoc?.sellingPrice ?? 0);
+    const buying = it.buyingPrice ?? (productDoc?.buyingPrice ?? 0);
+    const categoryRaw = (it.category ?? (productDoc?.category ?? '')).trim();
     const normCat = normalizeCategoryName(categoryRaw);
 
     let discounted = null;
@@ -76,7 +68,7 @@ async function createInvoice(payload) {
     }
 
     itemDocs.push({ 
-      product: productDoc._id, 
+      product: productDoc?._id || null, 
       productName: productDoc?.name || it.name || '',
       qty: it.qty, 
       price: selling, 

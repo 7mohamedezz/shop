@@ -2,7 +2,7 @@ module.exports = function loadInvoice(connection) {
   const { Schema, Types } = require('mongoose');
 
   const InvoiceItemSchema = new Schema({
-    product: { type: Types.ObjectId, ref: 'Product', required: true },
+    product: { type: Types.ObjectId, ref: 'Product', required: false },
     // Denormalized product name snapshot at the time of invoicing
     productName: { type: String, default: '' },
     qty: { type: Number, required: true, min: 0 },
