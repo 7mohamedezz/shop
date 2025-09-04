@@ -721,6 +721,7 @@ async function generateInvoicePrintableHtml(invoiceId, options = {}) {
         <tr>
           <th style="width:36px; text-align:center">#</th>
           <th>الصنف</th>
+          <th>الفئة</th>
           <th>الكمية</th>
           <th>السعر</th>
           <th>الإجمالي</th>
@@ -731,6 +732,7 @@ async function generateInvoicePrintableHtml(invoiceId, options = {}) {
           <tr>
             <td style="text-align:center">${idx + 1}</td>
             <td>${ri.productName || ri.product}</td>
+            <td>${ri.category || ''}</td>
             <td style="text-align:center">${ri.qty}</td>
             <td style="text-align:right">${Number(ri.price).toFixed(2)}</td>
             <td style="text-align:right">${(Number(ri.qty || 0) * Number(ri.price || 0)).toFixed(2)}</td>

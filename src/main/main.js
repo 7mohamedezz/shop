@@ -244,8 +244,7 @@ ipcMain.handle('products:updatePopularity', async (event, { id, quantity }) => {
   }
 });
 
-    // Enable developer tools for debugging
-    mainWindow.webContents.openDevTools();
+    // Developer tools disabled for production
     
     console.log('🌐 Loading main window...');
     await mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));

@@ -9,22 +9,45 @@
 </head>
 <body>
   <header>
-    <h1>متجر السباكة</h1>
-    <nav>
-      <button class="tab active" data-tab="create-invoice">إنشاء فاتورة</button>
-      <button class="tab" data-tab="invoices">عرض الفواتير</button>
-      <button class="tab" data-tab="products">المنتجات</button>
-      <button class="tab" data-tab="low-stock">قرب النفاد</button>
-      <button class="tab" data-tab="customers">العملاء</button>
-      <button class="tab" data-tab="search">بحث</button>
-      <button id="backup-btn" style="margin-inline-start:auto; background:#10b981; color:#fff">نسخة احتياطية</button>
-      <button id="restore-backup-btn" style="background:#3b82f6; color:#fff">استعادة نسخة</button>
-      <div style="display:flex; align-items:center; gap:6px; margin-inline-start:12px">
-        <label for="ui-font-size" style="min-width:auto; font-weight:600; color:#374151">حجم الخط</label>
-        <input type="range" id="ui-font-size" min="10" max="20" step="1" value="14" style="width:130px" />
-        <span id="ui-font-size-val" class="muted" style="min-width:2ch; text-align:center">14</span>
-      </div>
-    </nav>
+    <div class="header-content">
+      <h1>متجر السباكة</h1>
+      <nav role="navigation" aria-label="التنقل الرئيسي">
+        <div class="nav-tabs">
+          <button class="tab active" data-tab="create-invoice" aria-label="إنشاء فاتورة جديدة">
+            <span>إنشاء فاتورة</span>
+          </button>
+          <button class="tab" data-tab="invoices" aria-label="عرض جميع الفواتير">
+            <span>عرض الفواتير</span>
+          </button>
+          <button class="tab" data-tab="products" aria-label="إدارة المنتجات">
+            <span>المنتجات</span>
+          </button>
+          <button class="tab" data-tab="low-stock" aria-label="المنتجات قرب النفاد">
+            <span>قرب النفاد</span>
+          </button>
+          <button class="tab" data-tab="customers" aria-label="إدارة العملاء والسباكون">
+            <span>العملاء</span>
+          </button>
+          <button class="tab" data-tab="search" aria-label="البحث في الفواتير">
+            <span>بحث</span>
+          </button>
+        </div>
+        <div class="header-actions">
+          <button id="backup-btn" class="action-btn backup-btn" aria-label="إنشاء نسخة احتياطية">
+            <span>نسخة احتياطية</span>
+          </button>
+          <button id="restore-backup-btn" class="action-btn restore-btn" aria-label="استعادة نسخة احتياطية">
+            <span>استعادة نسخة</span>
+          </button>
+          <div class="font-size-control">
+            <label for="ui-font-size" class="font-size-label">حجم الخط</label>
+            <input type="range" id="ui-font-size" min="10" max="20" step="1" value="14" 
+                   aria-label="تغيير حجم الخط" />
+            <span id="ui-font-size-val" class="font-size-value" aria-live="polite">14</span>
+          </div>
+        </div>
+      </nav>
+    </div>
   </header>
 
   <main>

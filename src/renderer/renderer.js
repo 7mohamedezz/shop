@@ -1,6 +1,9 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+// Debug mode flag - set to false to disable all console logging
+const DEBUG_MODE = false;
+
 function currency(n) { return (Number(n || 0)).toFixed(2); }
 
 // Simple modal helper for editing a person's name/phone (customer/plumber)
@@ -196,9 +199,9 @@ window.addEventListener('unhandledrejection', (event) => {
   showErrorMessage(`خطأ في العملية: ${event.reason?.message || event.reason || 'خطأ غير معروف'}`);
 });
 
-// Enhanced error display function
+// Enhanced error display function with modern styling
 function showErrorMessage(message, type = 'error') {
-  console.log(`${type === 'error' ? '❌' : '✅'} ${message}`);
+  if (DEBUG_MODE) console.log(`${type === 'error' ? '❌' : '✅'} ${message}`);
   
   // Create or update error display element
   let errorDiv = $('#global-error-display');
@@ -207,30 +210,111 @@ function showErrorMessage(message, type = 'error') {
     errorDiv.id = 'global-error-display';
     errorDiv.style.cssText = `
       position: fixed;
-      top: 10px;
-      right: 10px;
+      top: 20px;
+      right: 20px;
       max-width: 400px;
-      padding: 12px;
-      border-radius: 6px;
+      padding: 16px 20px;
+      border-radius: 12px;
       z-index: 10000;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      font-weight: 600;
+      font-size: 14px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.2);
+      transform: translateX(100%);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     `;
     document.body.appendChild(errorDiv);
   }
   
-  errorDiv.style.backgroundColor = type === 'error' ? '#fee2e2' : '#dcfce7';
-  errorDiv.style.color = type === 'error' ? '#dc2626' : '#16a34a';
-  errorDiv.style.border = type === 'error' ? '1px solid #fca5a5' : '1px solid #86efac';
+  // Set colors based on type
+  if (type === 'error') {
+    errorDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+    errorDiv.style.color = '#dc2626';
+    errorDiv.style.borderColor = 'rgba(239, 68, 68, 0.2)';
+  } else if (type === 'success') {
+    errorDiv.style.backgroundColor = 'rgba(34, 197, 94, 0.1)';
+    errorDiv.style.color = '#16a34a';
+    errorDiv.style.borderColor = 'rgba(34, 197, 94, 0.2)';
+  } else {
+    errorDiv.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
+    errorDiv.style.color = '#2563eb';
+    errorDiv.style.borderColor = 'rgba(59, 130, 246, 0.2)';
+  }
+  
   errorDiv.textContent = message;
   errorDiv.style.display = 'block';
   
-  // Auto-hide after 5 seconds
+  // Animate in
+  setTimeout(() => {
+    errorDiv.style.transform = 'translateX(0)';
+  }, 10);
+  
+  // Auto-hide after 5 seconds with animation
   setTimeout(() => {
     if (errorDiv) {
-      errorDiv.style.display = 'none';
+      errorDiv.style.transform = 'translateX(100%)';
+      setTimeout(() => {
+        errorDiv.style.display = 'none';
+      }, 300);
     }
   }, 5000);
+}
+
+// Loading state management
+function showLoadingState(element, text = 'جاري التحميل...') {
+  if (!element) return;
+  
+  const originalContent = element.innerHTML;
+  element.dataset.originalContent = originalContent;
+  element.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+      <div class="spinner"></div>
+      <span>${text}</span>
+    </div>
+  `;
+  element.classList.add('loading');
+  element.disabled = true;
+}
+
+function hideLoadingState(element) {
+  if (!element) return;
+  
+  if (element.dataset.originalContent) {
+    element.innerHTML = element.dataset.originalContent;
+    delete element.dataset.originalContent;
+  }
+  element.classList.remove('loading');
+  element.disabled = false;
+}
+
+// Enhanced API call wrapper with loading states
+async function safeApiCall(apiCall, errorContext = '', loadingElement = null) {
+  try {
+    if (DEBUG_MODE) console.log(`🔄 API Call: ${errorContext}`);
+    
+    if (loadingElement) {
+      showLoadingState(loadingElement, `جاري ${errorContext}...`);
+    }
+    
+    const result = await apiCall();
+    
+    // Check if result contains error
+    if (result && result.error) {
+      throw new Error(result.message || 'API returned error');
+    }
+    
+    if (DEBUG_MODE) console.log(`✅ API Success: ${errorContext}`);
+    return result;
+  } catch (error) {
+    console.error(`❌ API Error in ${errorContext}:`, error);
+    showErrorMessage(`خطأ في ${errorContext}: ${error.message}`);
+    throw error;
+  } finally {
+    if (loadingElement) {
+      hideLoadingState(loadingElement);
+    }
+  }
 }
 
 // ===================== UI Font Size Control =====================
@@ -270,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Enhanced API call wrapper with error handling
 async function safeApiCall(apiCall, errorContext = '') {
   try {
-    console.log(`🔄 API Call: ${errorContext}`);
+    if (DEBUG_MODE) console.log(`🔄 API Call: ${errorContext}`);
     const result = await apiCall();
     
     // Check if result contains error
@@ -278,7 +362,7 @@ async function safeApiCall(apiCall, errorContext = '') {
       throw new Error(result.message || 'API returned error');
     }
     
-    console.log(`✅ API Success: ${errorContext}`);
+    if (DEBUG_MODE) console.log(`✅ API Success: ${errorContext}`);
     return result;
   } catch (error) {
     console.error(`❌ API Error in ${errorContext}:`, error);
@@ -480,8 +564,14 @@ $('#invoice-form').addEventListener('input', recomputeTotals);
 $('#invoice-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const items = $$('#items-body tr').map(tr => tr.getData()).filter(it => it.name && it.price >= 0 && it.qty >= 0);
-  if (!items.length) { $('#invoice-error').textContent = 'أضف بندًا واحدًا على الأقل.'; return; }
-  if (!$('#cust-name').value.trim() || !$('#cust-phone').value.trim()) { $('#invoice-error').textContent = 'اسم العميل ورقم الهاتف مطلوبان.'; return; }
+  if (!items.length) { 
+    showErrorMessage('أضف بندًا واحدًا على الأقل.'); 
+    return; 
+  }
+  if (!$('#cust-name').value.trim() || !$('#cust-phone').value.trim()) { 
+    showErrorMessage('اسم العميل ورقم الهاتف مطلوبان.'); 
+    return; 
+  }
   const payments = $$('#payments-body tr').map(tr => ({ amount: Number(tr.querySelector('.pay-amount').value || 0), date: tr.querySelector('.pay-date').value || new Date().toISOString(), note: tr.querySelector('.pay-note').value })).filter(p => p.amount > 0);
 
   const payload = {
@@ -494,18 +584,19 @@ $('#invoice-form').addEventListener('submit', async (e) => {
     discountBrPercent: Number($('#discount-br').value || 0)
   };
 
+  const submitButton = e.target.querySelector('button[type="submit"]');
+  
   try {
-    $('#invoice-error').textContent = 'جاري إنشاء الفاتورة...';
+    showLoadingState(submitButton, 'جاري إنشاء الفاتورة...');
     const result = await window.api.invoices.create(payload);
     
     if (result && result.error) { 
-      $('#invoice-error').textContent = result.message || 'فشل إنشاء الفاتورة.'; 
+      showErrorMessage(result.message || 'فشل إنشاء الفاتورة.'); 
       return; 
     }
     
     // Success! Show message and refresh invoice list
-    $('#invoice-error').textContent = 'تم إنشاء الفاتورة بنجاح!';
-    $('#invoice-error').style.color = '#16a34a';
+    showErrorMessage('تم إنشاء الفاتورة بنجاح!', 'success');
     
     // Clear form
     $('#items-body').innerHTML = '';
@@ -523,15 +614,10 @@ $('#invoice-form').addEventListener('submit', async (e) => {
     const invoicesTab = $$('.tab').find(t => t.getAttribute('data-tab') === 'invoices');
     if (invoicesTab) invoicesTab.classList.add('active');
     
-    // Clear success message after 3 seconds
-    setTimeout(() => {
-      $('#invoice-error').textContent = '';
-      $('#invoice-error').style.color = '#fca5a5';
-    }, 3000);
-    
   } catch (error) {
-    $('#invoice-error').textContent = 'خطأ في إنشاء الفاتورة: ' + (error.message || 'خطأ غير معروف');
-    $('#invoice-error').style.color = '#fca5a5';
+    showErrorMessage('خطأ في إنشاء الفاتورة: ' + (error.message || 'خطأ غير معروف'));
+  } finally {
+    hideLoadingState(submitButton);
   }
 });
 
@@ -605,8 +691,8 @@ if (livePlumberSearch) {
 
 // Invoice list: view detail and create return invoice preserving sold prices
 async function showInvoiceDetail(id) {
-  console.log('=== SHOW INVOICE DETAIL DEBUG ===');
-  console.log('showInvoiceDetail called with id:', id, 'type:', typeof id);
+  if (DEBUG_MODE) console.log('=== SHOW INVOICE DETAIL DEBUG ===');
+  if (DEBUG_MODE) console.log('showInvoiceDetail called with id:', id, 'type:', typeof id);
   
   // Check if window.api is available
   if (!window.api) {
@@ -616,11 +702,11 @@ async function showInvoiceDetail(id) {
   }
   
   try {
-    console.log('Calling window.api.invoices.getById...');
+    if (DEBUG_MODE) console.log('Calling window.api.invoices.getById...');
     const inv = await window.api.invoices.getById(id);
-    console.log('Invoice data received:', inv);
+    if (DEBUG_MODE) console.log('Invoice data received:', inv);
     const panel = $('#invoice-detail');
-    console.log('Detail panel element:', panel);
+    if (DEBUG_MODE) console.log('Detail panel element:', panel);
     
     if (!panel) {
       console.error('❌ Detail panel element not found!');
@@ -629,7 +715,7 @@ async function showInvoiceDetail(id) {
     }
     
     if (!inv) { 
-      console.log('❌ No invoice found, hiding panel');
+      if (DEBUG_MODE) console.log('❌ No invoice found, hiding panel');
       panel.style.display='none';
       showErrorMessage('لم يتم العثور على الفاتورة');
       return; 
@@ -870,7 +956,7 @@ async function showInvoiceDetail(id) {
     panel.innerHTML = `<div style="color: red; padding: 20px;">خطأ في عرض تفاصيل الفاتورة: ${error.message}</div>`;
     panel.style.display = 'block';
   }
-  console.log('=== END SHOW INVOICE DETAIL DEBUG ===');
+  if (DEBUG_MODE) console.log('=== END SHOW INVOICE DETAIL DEBUG ===');
 }
 
 function buildReturnForm(inv) {
@@ -1011,7 +1097,7 @@ function buildReturnForm(inv) {
 }
 
 async function loadInvoices() {
-  console.log('🔄 Loading invoices...');
+  if (DEBUG_MODE) console.log('🔄 Loading invoices...');
   const search = $('#invoice-search')?.value?.trim() || '';
   const filter = $('#archive-filter')?.value || 'active';
   const showDeletedOnly = $('#show-deleted-only')?.checked || false;
@@ -1021,29 +1107,46 @@ async function loadInvoices() {
   if (filter === 'archived') filters.archived = true;
   if (showDeletedOnly) filters.deleted = true; // only deleted
   
-  console.log('📋 Invoice filters:', filters);
+  if (DEBUG_MODE) console.log('📋 Invoice filters:', filters);
+  
+  const container = $('#invoice-list');
+  if (!container) {
+    console.error('❌ Invoice list container not found!');
+    showErrorMessage('خطأ: لم يتم العثور على حاوية قائمة الفواتير');
+    return;
+  }
+  
+  // Show loading state
+  showLoadingState(container, 'جاري تحميل الفواتير...');
   
   try {
     const list = await window.api.invoices.list(filters);
-    console.log('✅ Invoices loaded:', list.length);
-    console.log('📊 First invoice sample:', list[0]);
-    
-    const container = $('#invoice-list');
-    if (!container) {
-      console.error('❌ Invoice list container not found!');
-      showErrorMessage('خطأ: لم يتم العثور على حاوية قائمة الفواتير');
-      return;
-    }
+    if (DEBUG_MODE) console.log('✅ Invoices loaded:', list.length);
+    if (DEBUG_MODE) console.log('📊 First invoice sample:', list[0]);
     
     container.innerHTML = '';
     
     if (list.length === 0) {
-      container.innerHTML = '<div class="muted" style="padding: 20px; text-align: center; background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 8px;">لا توجد فواتير متاحة</div>';
-      console.log('ℹ️ No invoices found, showing empty message');
+      container.innerHTML = `
+        <div style="
+          padding: 40px 20px; 
+          text-align: center; 
+          background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+          border: 2px dashed #cbd5e1; 
+          border-radius: 16px;
+          color: #64748b;
+          font-size: 16px;
+          font-weight: 500;
+        ">
+          <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.5;">📄</div>
+          لا توجد فواتير متاحة
+        </div>
+      `;
+      if (DEBUG_MODE) console.log('ℹ️ No invoices found, showing empty message');
       return;
     }
     
-    console.log('Rendering', list.length, 'invoices');
+    if (DEBUG_MODE) console.log('Rendering', list.length, 'invoices');
     
     list.forEach(inv => {
       // Prefer numeric external id
@@ -1091,10 +1194,10 @@ async function loadInvoices() {
         </div>
       `;
       container.appendChild(card);
-      console.log('Added invoice card for:', inv.customer?.name || 'Unknown');
+      if (DEBUG_MODE) console.log('Added invoice card for:', inv.customer?.name || 'Unknown');
     });
     
-    console.log('All invoice cards added to container');
+    if (DEBUG_MODE) console.log('All invoice cards added to container');
   } catch (error) {
     console.error('Error loading invoices:', error);
     const container = $('#invoice-list');
@@ -1151,22 +1254,22 @@ $('#invoice-list').addEventListener('click', async (e) => {
     return;
   }
   
-  console.log('=== INVOICE LIST CLICK DEBUG ===');
-  console.log('Click target:', e.target);
-  console.log('Target tagName:', e.target.tagName);
-  console.log('Target className:', e.target.className);
-  console.log('✅ Button found:', btn.className, 'ID:', id, 'Type:', typeof id);
+  if (DEBUG_MODE) console.log('=== INVOICE LIST CLICK DEBUG ===');
+  if (DEBUG_MODE) console.log('Click target:', e.target);
+  if (DEBUG_MODE) console.log('Target tagName:', e.target.tagName);
+  if (DEBUG_MODE) console.log('Target className:', e.target.className);
+  if (DEBUG_MODE) console.log('✅ Button found:', btn.className, 'ID:', id, 'Type:', typeof id);
   
   if (btn.classList.contains('btn-print')) {
-    console.log('🖨️ Print button clicked');
+    if (DEBUG_MODE) console.log('🖨️ Print button clicked');
     try {
       await window.api.print.invoice(id);
-      console.log('✅ Print completed');
+      if (DEBUG_MODE) console.log('✅ Print completed');
     } catch (error) {
       console.error('❌ Print error:', error);
     }
   } else if (btn.classList.contains('btn-archive')) {
-    console.log('📁 Archive button clicked');
+    if (DEBUG_MODE) console.log('📁 Archive button clicked');
     try {
       const invoices = await window.api.invoices.list({});
       const inv = invoices.find(x => {
@@ -1185,17 +1288,17 @@ $('#invoice-list').addEventListener('click', async (e) => {
         return String(xId) === String(id);
       });
       if (inv) {
-        console.log('Archiving invoice with ID:', id, 'Type:', typeof id);
+        if (DEBUG_MODE) console.log('Archiving invoice with ID:', id, 'Type:', typeof id);
         await window.api.invoices.archive(isNumericId(id) ? Number(id) : String(id), !inv.archived);
         await loadInvoices();
         await showInvoiceDetail(isNumericId(id) ? Number(id) : String(id));
-        console.log('✅ Archive completed');
+        if (DEBUG_MODE) console.log('✅ Archive completed');
       }
     } catch (error) {
       console.error('❌ Archive error:', error);
     }
   } else if (btn.classList.contains('btn-edit')) {
-    console.log('✏️ Edit button clicked for invoice:', id);
+    if (DEBUG_MODE) console.log('✏️ Edit button clicked for invoice:', id);
     try {
       await showEditInvoiceForm(isNumericId(id) ? Number(id) : String(id));
     } catch (error) {
@@ -1203,17 +1306,17 @@ $('#invoice-list').addEventListener('click', async (e) => {
       showErrorMessage('خطأ في تعديل الفاتورة: ' + error.message);
     }
   } else if (btn.classList.contains('btn-view')) {
-    console.log('👁️ View button clicked for invoice:', id);
+    if (DEBUG_MODE) console.log('👁️ View button clicked for invoice:', id);
     try {
-      console.log('Calling showInvoiceDetail with ID:', id);
+      if (DEBUG_MODE) console.log('Calling showInvoiceDetail with ID:', id);
       await showInvoiceDetail(isNumericId(id) ? Number(id) : String(id));
-      console.log('✅ showInvoiceDetail completed');
+      if (DEBUG_MODE) console.log('✅ showInvoiceDetail completed');
       const detailPanel = document.getElementById('invoice-detail');
       if (detailPanel) {
-        console.log('📜 Scrolling to detail panel');
+        if (DEBUG_MODE) console.log('📜 Scrolling to detail panel');
         detailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } else {
-        console.log('❌ Detail panel not found');
+        if (DEBUG_MODE) console.log('❌ Detail panel not found');
       }
     } catch (error) {
       console.error('❌ View error:', error);
@@ -1256,9 +1359,9 @@ $('#invoice-list').addEventListener('click', async (e) => {
       showErrorMessage('خطأ في الحذف النهائي: ' + (error.message || ''));
     }
   } else {
-    console.log('❓ Unknown button type:', btn.className);
+    if (DEBUG_MODE) console.log('❓ Unknown button type:', btn.className);
   }
-  console.log('=== END CLICK DEBUG ===');
+  if (DEBUG_MODE) console.log('=== END CLICK DEBUG ===');
 });
 
 // Utility: debounce
@@ -1827,7 +1930,7 @@ async function displaySearchResults(searchTerm = '') {
       if (typeof invoiceId === 'object' && invoiceId.buffer) {
         // Convert buffer to hex string
         invoiceId = Array.from(invoiceId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
-        console.log('🔄 Converted buffer ID to string in search:', invoiceId);
+        if (DEBUG_MODE) console.log('🔄 Converted buffer ID to string in search:', invoiceId);
       } else if (typeof invoiceId === 'object' && invoiceId.toString) {
         invoiceId = invoiceId.toString();
       }
@@ -1938,7 +2041,7 @@ if (searchBtn) {
   searchBtn.addEventListener('click', async () => {
     try {
       const searchTerm = normalizeDigits($('#search-input').value.trim());
-      console.log('Search button clicked with term:', searchTerm);
+      if (DEBUG_MODE) console.log('Search button clicked with term:', searchTerm);
       await displaySearchResults(searchTerm);
       
       if (searchTerm) {
@@ -2039,13 +2142,13 @@ if (productForm) {
 
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('DOM loaded, initializing app...');
+  if (DEBUG_MODE) console.log('DOM loaded, initializing app...');
   
   // Test if basic elements exist
   const invoiceList = $('#invoice-list');
   const refreshBtn = $('#refresh-invoices');
-  console.log('Invoice list element:', invoiceList ? 'Found' : 'NOT FOUND');
-  console.log('Refresh button:', refreshBtn ? 'Found' : 'NOT FOUND');
+  if (DEBUG_MODE) console.log('Invoice list element:', invoiceList ? 'Found' : 'NOT FOUND');
+  if (DEBUG_MODE) console.log('Refresh button:', refreshBtn ? 'Found' : 'NOT FOUND');
   
   // Add visible indicator that frontend is working
   if (invoiceList) {
@@ -2058,10 +2161,10 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#add-payment')?.click();
     
     // Force load invoices with extra logging
-    console.log('About to load invoices...');
+    if (DEBUG_MODE) console.log('About to load invoices...');
     setTimeout(() => {
       loadInvoices().then(() => {
-        console.log('loadInvoices completed');
+        if (DEBUG_MODE) console.log('loadInvoices completed');
       }).catch(error => {
         console.error('loadInvoices failed:', error);
         const invoiceList = $('#invoice-list');
@@ -2074,7 +2177,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadProducts();
     loadCustomers();
     loadPlumbers();
-    console.log('App initialized successfully');
+    if (DEBUG_MODE) console.log('App initialized successfully');
   } catch (error) {
     console.error('Error initializing app:', error);
     if (invoiceList) {
