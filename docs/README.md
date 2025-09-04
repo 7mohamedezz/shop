@@ -112,27 +112,6 @@ MONGODB_ATLAS_URI=mongodb+srv://username:password@cluster.mongodb.net/database_n
 
 **Note**: If you configure both connections, the system will automatically sync data between your local and cloud databases.
 
-#### Getting MongoDB Atlas Connection String:
-
-1. **Create MongoDB Atlas Account**: Go to [MongoDB Atlas](https://www.mongodb.com/atlas)
-2. **Create a Cluster**: Choose the free tier (M0) for development
-3. **Create Database User**:
-   - Go to "Database Access" in your Atlas dashboard
-   - Click "Add New Database User"
-   - Choose "Password" authentication
-   - Create a username and strong password
-   - Grant "Read and write to any database" privileges
-4. **Whitelist IP Address**:
-   - Go to "Network Access" in your Atlas dashboard
-   - Click "Add IP Address"
-   - Add your current IP or use `0.0.0.0/0` for development (not recommended for production)
-5. **Get Connection String**:
-   - Go to "Clusters" in your Atlas dashboard
-   - Click "Connect" on your cluster
-   - Choose "Connect your application"
-   - Copy the connection string and replace `<password>` with your database user password
-   - Replace `<dbname>` with your database name (e.g., `plumbing_shop`)
-
 #### Example .env file:
 ```env
 MONGODB_URI=mongodb+srv://myuser:mypassword123@cluster0.abc123.mongodb.net/plumbing_shop?retryWrites=true&w=majority
@@ -211,14 +190,6 @@ Configuration files are located in the `config/` directory:
 
 - `database.js`: Database connection settings
 - `electron.js`: Electron application configuration
-
-## Scripts
-
-Utility scripts are located in the `scripts/` directory:
-
-- `test.js`: Database connection testing
-- `check-atlas-data.js`: Atlas database verification
-- `seed.js`: Database seeding (if available)
 
 ## User Interface
 
