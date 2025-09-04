@@ -47,11 +47,20 @@ module.exports = function loadInvoice(connection) {
           { $inc: { seq: 1 } },
           { new: true, upsert: true }
         );
-        const nextSeq = (counterDoc && counterDoc.seq) ? counterDoc.seq : 1001;
+        // Start from 1025, so if counter is 1024, next will be 1025
+        const nextSeq = (counterDoc && counterDoc.seq) ? counterDoc.seq : 1025;
         this.invoiceNumber = nextSeq;
       } catch (error) {
         console.error('Error generating invoice number via Counter:', error);
-        this.invoiceNumber = Date.now() % 100000; // Fallback
+        // Improved fallback: try to get the highest existing invoice number
+        try {
+          const lastInvoice = await this.constructor.findOne({}, {}, { sort: { invoiceNumber: -1 } });
+          const lastNum = lastInvoice?.invoiceNumber || 1024;
+          this.invoiceNumber = Math.max(1025, lastNum + 1);
+        } catch (fallbackError) {
+          console.error('Fallback invoice number generation failed:', fallbackError);
+          this.invoiceNumber = 1025; // Ultimate fallback
+        }
       }
     }
     next();

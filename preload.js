@@ -34,7 +34,8 @@ contextBridge.exposeInMainWorld('api', {
     archive: (invoiceId, archived) => ipcRenderer.invoke('invoices:archive', invoiceId, archived),
     delete: (invoiceId) => ipcRenderer.invoke('invoices:delete', invoiceId),
     restore: (invoiceId) => ipcRenderer.invoke('invoices:restore', invoiceId),
-    hardDelete: (invoiceId) => ipcRenderer.invoke('invoices:hardDelete', invoiceId)
+    hardDelete: (invoiceId) => ipcRenderer.invoke('invoices:hardDelete', invoiceId),
+    initializeCounter: () => ipcRenderer.invoke('invoices:initializeCounter')
   },
   returns: {
     create: (data) => ipcRenderer.invoke('returns:create', data)

@@ -105,10 +105,13 @@ async function createInvoice(payload) {
     const last = await Invoice.findOne({}, {}, { sort: { invoiceNumber: -1 } }).lean();
     const lastNum = Number(last?.invoiceNumber);
     if (Number.isFinite(lastNum)) {
-      computedInvoiceNumber = Math.trunc(lastNum) + 1;
+      computedInvoiceNumber = Math.max(1025, Math.trunc(lastNum) + 1);
+    } else {
+      computedInvoiceNumber = 1025; // Start from 1025 if no invoices exist
     }
   } catch (e) {
     console.warn('Could not compute next invoice number, letting pre-save handle it:', e?.message);
+    computedInvoiceNumber = 1025; // Fallback to 1025
   }
 
   const baseDoc = {
@@ -903,6 +906,29 @@ async function hardDeleteInvoice(invoiceId) {
   return { success: true };
 }
 
+async function initializeInvoiceCounter() {
+  const models = getLocalModels();
+  if (!models || !models.Counter) {
+    throw new Error('Database connection not available. Cannot initialize counter.');
+  }
+  
+  const { Counter } = models;
+  try {
+    // Check if counter exists
+    const existingCounter = await Counter.findById('invoiceNumber');
+    if (!existingCounter) {
+      // Initialize counter to 1024 (so next invoice will be 1025)
+      await Counter.create({ _id: 'invoiceNumber', seq: 1024 });
+      console.log('✅ Invoice counter initialized to 1024');
+    } else {
+      console.log(`ℹ️ Invoice counter already exists with value: ${existingCounter.seq}`);
+    }
+  } catch (error) {
+    console.error('❌ Failed to initialize invoice counter:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   createInvoice,
   listInvoices,
@@ -915,5 +941,6 @@ module.exports = {
   generateInvoicePrintableHtml,
   deleteInvoice,
   restoreInvoice,
-  hardDeleteInvoice
+  hardDeleteInvoice,
+  initializeInvoiceCounter
 };

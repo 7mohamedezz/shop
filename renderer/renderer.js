@@ -110,7 +110,7 @@ async function displayInvoicesWithFilters(filters = {}) {
           <div><strong>${inv.customerName || inv.customer?.name || ''}</strong> — ${inv.customerPhone || inv.customer?.phone || ''}</div>
           <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
           <div class="muted">تاريخ الإنشاء: ${new Date(inv.createdAt).toLocaleString()} | آخر تحديث: ${new Date(inv.updatedAt).toLocaleString()}</div>
-          <div class="muted">رقم الفاتورة: ${inv.invoiceNumber ?? '—'} | ID: ${invoiceId}</div>
+          <div class="muted">رقم الفاتورة: ${inv.invoiceNumber ? `#${inv.invoiceNumber}` : '—'} | ID: ${invoiceId}</div>
           <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)}</div>
         </div>
         <div>
@@ -713,8 +713,8 @@ async function showInvoiceDetail(id) {
           <div><strong>تاريخ الإنشاء:</strong> ${createdDate}</div>
           <div><strong>آخر تحديث:</strong> ${updatedDate}</div>
           <div><strong>الحالة:</strong> ${inv.archived ? 'مؤرشف' : 'نشط'}</div>
-          <div><strong>رقم الفاتورة:</strong> ${invoiceNumberExt ?? '—'}</div>
-          <div><strong>رقم الفاتورة:</strong> ${idStr}</div>
+          <div><strong>رقم الفاتورة:</strong> ${invoiceNumberExt ? `#${invoiceNumberExt}` : '—'}</div>
+          <div><strong>معرف الفاتورة:</strong> ${idStr}</div>
         </div>
       </div>
       
@@ -1848,7 +1848,7 @@ async function displaySearchResults(searchTerm = '') {
           <div><strong>${inv.customer?.name || ''}</strong> — ${inv.customer?.phone || ''}</div>
           <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
           <div class="muted">تاريخ الإنشاء: ${new Date(inv.createdAt).toLocaleString()} | آخر تحديث: ${new Date(inv.updatedAt).toLocaleString()}</div>
-          <div class="muted">رقم الفاتورة: ${inv.invoiceNumber ?? '—'} | ID: ${invoiceId}</div>
+          <div class="muted">رقم الفاتورة: ${inv.invoiceNumber ? `#${inv.invoiceNumber}` : '—'} | ID: ${invoiceId}</div>
           <div>الإجمالي: ${currency(inv.total)} | المتبقي: ${currency(inv.remaining)}</div>
         </div>
         <div>

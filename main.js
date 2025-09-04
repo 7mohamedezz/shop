@@ -140,7 +140,14 @@ ipcMain.handle('backup:restore', async () => {
     if (maxInvoiceFromDump > 0) {
       await models.Counter.findOneAndUpdate(
         { _id: 'invoiceNumber' },
-        { $max: { seq: maxInvoiceFromDump } },
+        { $max: { seq: Math.max(1024, maxInvoiceFromDump) } },
+        { upsert: true }
+      );
+    } else {
+      // Initialize counter to 1024 if no invoices in dump (so next will be 1025)
+      await models.Counter.findOneAndUpdate(
+        { _id: 'invoiceNumber' },
+        { $set: { seq: 1024 } },
         { upsert: true }
       );
     }
@@ -510,6 +517,15 @@ ipcMain.handle('invoices:hardDelete', async (_e, invoiceId) => {
     return result;
   } catch (err) {
     return { error: true, message: err.message };
+  }
+});
+
+ipcMain.handle('invoices:initializeCounter', async () => {
+  try {
+    await invoiceService.initializeInvoiceCounter();
+    return { success: true };
+  } catch (error) {
+    return { error: true, message: error.message };
   }
 });
 
