@@ -1,4 +1,4 @@
-const { getLocalModels } = require('./db');
+const { getLocalModels } = require('../database/db');
 
 async function upsertCustomerByPhone(data) {
   const { Customer } = getLocalModels();

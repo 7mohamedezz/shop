@@ -1,7 +1,7 @@
 const dayjs = require('dayjs');
-const { getLocalModels } = require('./db');
+const { getLocalModels } = require('../database/db');
 const { Types } = require('mongoose');
-const { toObjectIdString, findByIdSafe } = require('./objectIdUtils');
+const { toObjectIdString, findByIdSafe } = require('../utils/objectIdUtils');
 
 function isNumericId(v) {
   const s = String(v ?? '').trim();

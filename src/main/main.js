@@ -3,13 +3,13 @@ const path = require('path');
 const fs = require('fs').promises;
 require('dotenv').config();
 
-const { connectLocalDb, connectAtlasDb, getLocalModels } = require('./services/db');
-const productService = require('./services/productService');
-const customerService = require('./services/customerService');
-const plumberService = require('./services/plumberService');
-const invoiceService = require('./services/invoiceService');
-const { enqueueSync, startBackgroundSync } = require('./services/syncService');
-const { toObjectIdString } = require('./services/objectIdUtils');
+const { connectLocalDb, connectAtlasDb, getLocalModels } = require('../database/db');
+const productService = require('../services/productService');
+const customerService = require('../services/customerService');
+const plumberService = require('../services/plumberService');
+const invoiceService = require('../services/invoiceService');
+const { enqueueSync, startBackgroundSync } = require('../services/syncService');
+const { toObjectIdString } = require('../utils/objectIdUtils');
 
 let mainWindow;
 
@@ -46,7 +46,7 @@ async function createWindow() {
     // Resolve icon path for both dev and packaged builds
     const iconPath = app.isPackaged
       ? path.join(process.resourcesPath, 'logo.png')
-      : path.join(__dirname, 'logo.png');
+      : path.join(__dirname, '..', '..', 'assets', 'logo.png');
 
     mainWindow = new BrowserWindow({
       width: 1280,
@@ -248,7 +248,7 @@ ipcMain.handle('products:updatePopularity', async (event, { id, quantity }) => {
     mainWindow.webContents.openDevTools();
     
     console.log('🌐 Loading main window...');
-    await mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+    await mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
     console.log('✅ Application loaded successfully');
     
   } catch (error) {

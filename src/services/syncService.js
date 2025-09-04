@@ -1,4 +1,4 @@
-const { getConnections, getLocalModels, getAtlasModels } = require('./db');
+const { getConnections, getLocalModels, getAtlasModels } = require('../database/db');
 
 const queue = [];
 let syncing = false;

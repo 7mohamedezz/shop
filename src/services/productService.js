@@ -1,4 +1,4 @@
-const { getLocalModels } = require('./db');
+const { getLocalModels } = require('../database/db');
 
 function serialize(doc) {
   if (!doc) return doc;
