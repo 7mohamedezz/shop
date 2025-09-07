@@ -877,26 +877,82 @@ async function restoreInvoice(invoiceId) {
 }
 
 async function hardDeleteInvoice(invoiceId) {
+  console.log('🗑️ Hard delete invoice called with ID:', invoiceId, 'Type:', typeof invoiceId);
+  
   const models = getLocalModels();
   
   // Check if models are available
   if (!models || !models.Invoice || !models.ReturnInvoice) {
+    console.error('❌ Database models not available for hard delete');
+    console.error('❌ Models object:', models);
+    console.error('❌ Invoice model:', models?.Invoice);
+    console.error('❌ ReturnInvoice model:', models?.ReturnInvoice);
     throw new Error('Database connection not available. Cannot hard delete invoice.');
   }
   
+  console.log('✅ Database models available for hard delete');
+  
   const { Invoice, ReturnInvoice } = models;
+  
+  // Test database connection by trying to count invoices
+  try {
+    const invoiceCount = await Invoice.countDocuments();
+    console.log('🔍 Database connection test - total invoices:', invoiceCount);
+    
+    // Additional test - try to find any invoice
+    const anyInvoice = await Invoice.findOne({}).limit(1);
+    console.log('🔍 Database connection test - found any invoice:', !!anyInvoice);
+  } catch (dbError) {
+    console.error('❌ Database connection test failed:', dbError.message);
+    throw new Error('Database connection not working properly');
+  }
   let inv = null;
+  
   if (isNumericId(invoiceId)) {
+    console.log('🔢 Processing numeric ID:', invoiceId);
     const n = Number(String(invoiceId).trim());
     inv = await Invoice.findOne({ invoiceNumber: n });
+    console.log('🔍 Found invoice by number:', !!inv);
   } else {
+    console.log('🆔 Processing ObjectId:', invoiceId);
     const validId = toObjectIdString(invoiceId);
-    if (!validId) throw new Error('Invalid invoice ID format');
+    if (!validId) {
+      console.error('❌ Invalid ObjectId format:', invoiceId);
+      throw new Error('Invalid invoice ID format');
+    }
+    console.log('✅ Valid ObjectId:', validId);
     inv = await Invoice.findById(validId);
+    console.log('🔍 Found invoice by ObjectId:', !!inv);
   }
-  if (!inv) throw new Error('Invoice not found');
-  await ReturnInvoice.deleteOne({ originalInvoice: inv._id });
-  await Invoice.deleteOne({ _id: inv._id });
+  
+  if (!inv) {
+    console.error('❌ Invoice not found for ID:', invoiceId);
+    throw new Error('Invoice not found');
+  }
+  
+  console.log('✅ Invoice found, proceeding with hard delete');
+  console.log('🗑️ Deleting return invoices for invoice:', inv._id);
+  
+  // Delete return invoices and check result
+  const returnDeleteResult = await ReturnInvoice.deleteOne({ originalInvoice: inv._id });
+  console.log('🗑️ Return invoices delete result:', returnDeleteResult);
+  
+  // Delete main invoice and check result
+  console.log('🗑️ Deleting main invoice:', inv._id);
+  const invoiceDeleteResult = await Invoice.deleteOne({ _id: inv._id });
+  console.log('🗑️ Main invoice delete result:', invoiceDeleteResult);
+  
+  // Verify the invoice was actually deleted
+  const verifyInvoice = await Invoice.findById(inv._id);
+  console.log('🔍 Verification - invoice still exists:', !!verifyInvoice);
+  
+  if (verifyInvoice) {
+    console.error('❌ Invoice still exists after delete operation!');
+    throw new Error('Failed to delete invoice - invoice still exists in database');
+  }
+  
+  console.log('✅ Hard delete completed successfully - invoice verified as deleted');
+  
   return { success: true };
 }
 

@@ -17,13 +17,21 @@ async function createWindow() {
   try {
     console.log('🚀 Starting application...');
     
-    console.log('📊 Attempting to connect to MongoDB Atlas...');
+    console.log('📊 Attempting to connect to MongoDB...');
     try {
-      const mongoUri = process.env.MONGODB_URI || process.env.MONGODB_ATLAS_URI || 'mongodb+srv://abdo326302:LISKKI3ujWdRbrZQ@cluster0.gcuboxy.mongodb.net/plumbing_shop';
+      // FORCE local MongoDB for packaged apps
+      let mongoUri;
+      if (app.isPackaged) {
+        mongoUri = 'mongodb://localhost:27017/plumbing_shop';
+        console.log('🔗 FORCED local MongoDB for packaged app:', mongoUri);
+      } else {
+        mongoUri = process.env.MONGODB_URI || process.env.MONGODB_ATLAS_URI || 'mongodb+srv://abdo326302:LISKKI3ujWdRbrZQ@cluster0.gcuboxy.mongodb.net/plumbing_shop';
+        console.log('🔗 Using MongoDB URI:', mongoUri.replace(/\/\/.*@/, '//***:***@'));
+      }
       await connectLocalDb(mongoUri);
-      console.log('✅ MongoDB Atlas connected');
+      console.log('✅ MongoDB connected');
     } catch (error) {
-      console.warn('⚠️ MongoDB Atlas connection failed, continuing without database...');
+      console.warn('⚠️ MongoDB connection failed, continuing without database...');
       console.warn('⚠️ Error details:', error.message);
     }
     
