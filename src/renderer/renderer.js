@@ -624,26 +624,70 @@ if (custNameInput) {
 // Customers/Plumbers page live search
 const liveCustomerSearch = $('#live-customer-search');
 const liveCustomerResults = $('#live-customer-results');
-if (liveCustomerSearch) {
-  liveCustomerSearch.addEventListener('input', async () => {
+if (liveCustomerSearch && liveCustomerResults) {
+  const renderCustomerList = (list) => {
+    if (!Array.isArray(list) || list.length === 0) {
+      liveCustomerResults.innerHTML = '<div style="padding:8px; color:#6b7280">لا نتائج</div>';
+      liveCustomerResults.style.display = 'block';
+      return;
+    }
+    liveCustomerResults.innerHTML = list.map(c => `<div class="opt" data-name="${c.name}" data-phone="${c.phone}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${c.name}${c.phone?` — ${c.phone}`:''}</div>`).join('');
+    liveCustomerResults.style.display = 'block';
+  };
+
+  const doSearchCustomers = async () => {
     const q = liveCustomerSearch.value.trim();
     if (!q) { liveCustomerResults.style.display='none'; liveCustomerResults.innerHTML=''; return; }
-    const list = await window.api.customers.search(q);
-    liveCustomerResults.innerHTML = list.map(c => `<div>${c.name} — ${c.phone}</div>`).join('');
-    liveCustomerResults.style.display = list.length ? 'block' : 'none';
+    try {
+      const list = await window.api.customers.search(q);
+      renderCustomerList(list || []);
+    } catch (e) {
+      console.error('customer live search error', e);
+      liveCustomerResults.style.display='none';
+    }
+  };
+  liveCustomerSearch.addEventListener('input', doSearchCustomers);
+  liveCustomerResults.addEventListener('click', (e) => {
+    const opt = e.target.closest('.opt');
+    if (!opt) return;
+    liveCustomerSearch.value = opt.getAttribute('data-name');
+    liveCustomerResults.style.display = 'none';
   });
+  document.addEventListener('click', (e) => { if (!liveCustomerResults.contains(e.target) && e.target !== liveCustomerSearch) liveCustomerResults.style.display='none'; });
 }
 
 const livePlumberSearch = $('#live-plumber-search');
 const livePlumberResults = $('#live-plumber-results');
-if (livePlumberSearch) {
-  livePlumberSearch.addEventListener('input', async () => {
+if (livePlumberSearch && livePlumberResults) {
+  const renderPlumberList = (list) => {
+    if (!Array.isArray(list) || list.length === 0) {
+      livePlumberResults.innerHTML = '<div style="padding:8px; color:#6b7280">لا نتائج</div>';
+      livePlumberResults.style.display = 'block';
+      return;
+    }
+    livePlumberResults.innerHTML = list.map(p => `<div class="opt" data-name="${p.name}" data-phone="${p.phone || ''}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${p.name}${p.phone?` — ${p.phone}`:''}</div>`).join('');
+    livePlumberResults.style.display = 'block';
+  };
+
+  const doSearchPlumbers = async () => {
     const q = livePlumberSearch.value.trim();
     if (!q) { livePlumberResults.style.display='none'; livePlumberResults.innerHTML=''; return; }
-    const list = await window.api.plumbers.search(q);
-    livePlumberResults.innerHTML = list.map(p => `<div>${p.name}${p.phone ? ' — ' + p.phone : ''}</div>`).join('');
-    livePlumberResults.style.display = list.length ? 'block' : 'none';
+    try {
+      const list = await window.api.plumbers.search(q);
+      renderPlumberList(list || []);
+    } catch (e) {
+      console.error('plumber live search error', e);
+      livePlumberResults.style.display='none';
+    }
+  };
+  livePlumberSearch.addEventListener('input', doSearchPlumbers);
+  livePlumberResults.addEventListener('click', (e) => {
+    const opt = e.target.closest('.opt');
+    if (!opt) return;
+    livePlumberSearch.value = opt.getAttribute('data-name');
+    livePlumberResults.style.display = 'none';
   });
+  document.addEventListener('click', (e) => { if (!livePlumberResults.contains(e.target) && e.target !== livePlumberSearch) livePlumberResults.style.display='none'; });
 }
 
 // Invoice list: view detail and create return invoice preserving sold prices

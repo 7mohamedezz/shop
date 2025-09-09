@@ -172,11 +172,15 @@
     <section id="customers" class="page">
       <div class="panel">
         <h2>العملاء والسباكون</h2>
-        <div class="row">
-          <input type="text" id="live-customer-search" placeholder="ابحث عن عميل بالاسم أو الهاتف" />
-          <div id="live-customer-results" class="suggestions" style="display:none; position:relative"></div>
-          <input type="text" id="live-plumber-search" placeholder="ابحث عن سباك بالاسم أو الهاتف" />
-          <div id="live-plumber-results" class="suggestions" style="display:none; position:relative"></div>
+        <div class="row" style="display:flex; position:relative; gap:12px; align-items:flex-start; justify-content:flex-start; flex-wrap:wrap">
+          <div style="position:relative; width:340px; max-width:100%">
+            <input type="text" id="live-customer-search" placeholder="ابحث عن عميل بالاسم أو الهاتف" />
+            <div id="live-customer-results" class="suggestions" style="display:none; position:absolute; right:0; left:0; top:100%; z-index:1000; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,0.08); max-height:260px; overflow:auto"></div>
+          </div>
+          <div style="position:relative; width:340px; max-width:100%">
+            <input type="text" id="live-plumber-search" placeholder="ابحث عن سباك بالاسم أو الهاتف" />
+            <div id="live-plumber-results" class="suggestions" style="display:none; position:absolute; right:0; left:0; top:100%; z-index:1000; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,0.08); max-height:260px; overflow:auto"></div>
+          </div>
         </div>
         <h3>إضافة عميل</h3>
         <form id="customer-form" class="row">

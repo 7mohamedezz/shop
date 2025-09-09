@@ -32,10 +32,19 @@ async function createInvoice(payload) {
     throw new Error('Database connection not available. Cannot create invoice.');
   }
   
-  const { Invoice, Customer, Product } = models;
-  let customer = await Customer.findOne({ phone: payload.customer.phone });
-  if (!customer) {
-    customer = await Customer.create({ name: payload.customer.name, phone: payload.customer.phone });
+  const { Invoice, Customer, Product, Plumber } = models;
+  const requestedName = String(payload.customer?.name || '').trim();
+  const requestedPhone = String(payload.customer?.phone || '').trim();
+  let customer = await Customer.findOne({ phone: requestedPhone });
+  if (customer) {
+    // If a different name is provided for an existing phone, reject
+    const existingName = String(customer.name || '').trim();
+    if (requestedName && existingName && existingName !== requestedName) {
+      throw new Error('رقم الهاتف مستخدم بالفعل');
+    }
+  } else {
+    // Do not allow creating new customers during invoice creation
+    throw new Error('العميل غير موجود في قاعدة البيانات');
   }
 
   const abogaliPercent = Math.max(0, Math.min(100, Number(payload.discountAbogaliPercent || 0)));
@@ -370,7 +379,7 @@ async function updateInvoice(invoiceId, updateData) {
     throw new Error('Database connection not available. Cannot update invoice.');
   }
   
-  const { Invoice, Product, Customer } = models;
+  const { Invoice, Product, Customer, Plumber } = models;
   let inv = null;
   if (isNumericId(invoiceId)) {
     const n = Number(String(invoiceId).trim());
@@ -382,23 +391,35 @@ async function updateInvoice(invoiceId, updateData) {
   }
   if (!inv) throw new Error('Invoice not found');
   
-  // Update customer if provided
+  // Update customer if provided (must exist; do not auto-create during edit)
   if (updateData.customer) {
-    let customer = await Customer.findOne({ phone: updateData.customer.phone });
+    const requestedName = String(updateData.customer.name || '').trim();
+    const requestedPhone = String(updateData.customer.phone || '').trim();
+    const customer = await Customer.findOne({ phone: requestedPhone });
     if (!customer) {
-      customer = await Customer.create({ 
-        name: updateData.customer.name, 
-        phone: updateData.customer.phone 
-      });
+      throw new Error('العميل غير موجود في قاعدة البيانات');
+    }
+    const existingName = String(customer.name || '').trim();
+    if (requestedName && existingName && existingName !== requestedName) {
+      throw new Error('لا يمكن تغيير اسم العميل لرقم هاتف مسجل');
     }
     inv.customer = customer._id;
-    inv.customerName = customer.name || updateData.customer.name || '';
-    inv.customerPhone = customer.phone || updateData.customer.phone || '';
+    inv.customerName = customer.name || requestedName || '';
+    inv.customerPhone = customer.phone || requestedPhone || '';
   }
   
-  // Update plumber name
+  // Update plumber name (must exist if provided)
   if (updateData.plumberName !== undefined) {
-    inv.plumberName = updateData.plumberName;
+    const name = String(updateData.plumberName || '').trim();
+    if (name) {
+      const pl = await Plumber.findOne({ name });
+      if (!pl) {
+        throw new Error('السباك غير موجود في قاعدة البيانات');
+      }
+      inv.plumberName = pl.name;
+    } else {
+      inv.plumberName = '';
+    }
   }
   
   // Update discount percentages

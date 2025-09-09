@@ -40,36 +40,36 @@ async function showEditInvoiceForm(invoiceId) {
     const displayId = (Number.isFinite(Number(inv.invoiceNumber)) && inv.invoiceNumber !== 0) ? inv.invoiceNumber : (shortId || 'غير محدد');
 
     modal.innerHTML = `
-      <div style="background: white; padding: 24px; border-radius: 8px; max-width: 800px; width: 90%; max-height: 90%; overflow-y: auto; direction: rtl;">
+      <div style="background: white; padding: 24px; border-radius: 12px; max-width: 960px; width: 95%; max-height: 90%; overflow-y: auto; direction: rtl; box-shadow: 0 10px 30px rgba(0,0,0,0.15)">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-          <h2>تعديل الفاتورة #${displayId}</h2>
-          <button id="close-edit-modal" style="background: #dc2626; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer;">إغلاق</button>
+          <h2 style="margin:0; font-size:20px">تعديل الفاتورة #${displayId}</h2>
+          <button id="close-edit-modal" style="background: #ef4444; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer;">إغلاق</button>
         </div>
         
         <form id="edit-invoice-form">
           <div class="row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">
-            <label>اسم العميل
-              <input type="text" id="edit-cust-name" value="${inv.customer?.name || ''}" required/>
+            <label style="display:flex; flex-direction:column; gap:6px">اسم العميل
+              <input type="text" id="edit-cust-name" placeholder="اسم العميل" value="${inv.customer?.name || ''}" required/>
             </label>
-            <label>الهاتف
-              <input type="text" id="edit-cust-phone" value="${inv.customer?.phone || ''}" required/>
+            <label style="display:flex; flex-direction:column; gap:6px">الهاتف
+              <input type="text" id="edit-cust-phone" placeholder="مثال: 01012345678" inputmode="tel" value="${inv.customer?.phone || ''}" required/>
             </label>
-            <label>السباك
-              <input type="text" id="edit-plumber-name" value="${inv.plumberName || ''}" />
+            <label style="display:flex; flex-direction:column; gap:6px">السباك
+              <input type="text" id="edit-plumber-name" placeholder="اسم السباك" value="${inv.plumberName || ''}" />
             </label>
           </div>
           
           <div class="row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
-            <label>خصم ابوغالي %
+            <label style="display:flex; flex-direction:column; gap:6px">خصم ابوغالي %
               <input type="number" id="edit-discount-abogali" min="0" max="100" step="1" value="${inv.discountAbogaliPercent || 0}" />
             </label>
-            <label>خصم BR %
+            <label style="display:flex; flex-direction:column; gap:6px">خصم BR %
               <input type="number" id="edit-discount-br" min="0" max="100" step="1" value="${inv.discountBrPercent || 0}" />
             </label>
           </div>
           
           <div style="margin-bottom: 16px;">
-            <label>ملاحظات
+            <label style="display:flex; flex-direction:column; gap:6px">ملاحظات
               <textarea id="edit-invoice-notes" rows="3" placeholder="ملاحظات الفاتورة...">${inv.notes || ''}</textarea>
             </label>
           </div>
@@ -113,12 +113,15 @@ async function showEditInvoiceForm(invoiceId) {
                 `).join('')}
               </tbody>
             </table>
-            <button type="button" id="add-edit-item" style="background: #16a34a; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">+ إضافة بند</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+              <button type="button" id="add-edit-item" style="background: #16a34a; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">+ إضافة بند</button>
+              <div id="edit-totals" style="font-weight:600; color:#111827">الإجمالي: <span id="edit-total-val">0</span></div>
+            </div>
           </div>
           
           <div class="row" style="display: flex; gap: 12px; justify-content: flex-end;">
-            <button type="button" id="cancel-edit" style="background: #6b7280; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer;">إلغاء</button>
-            <button type="submit" style="background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer;">حفظ التغييرات</button>
+            <button type="button" id="cancel-edit" style="background: #6b7280; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer;">إلغاء</button>
+            <button type="submit" style="background: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer;">حفظ التغييرات</button>
           </div>
         </form>
       </div>
@@ -146,10 +149,10 @@ async function showEditInvoiceForm(invoiceId) {
           <div class="edit-item-suggestions" style="display:none; position:absolute; right:0; left:0; top:100%; z-index:1001; background:#fff; border:1px solid #d1d5db; max-height:200px; overflow:auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);"></div>
         </td>
         <td style="padding: 8px; border: 1px solid #d1d5db;">
-          <input type="number" data-index="${newIndex}" class="edit-item-qty" value="1" min="0" step="0.01" style="width: 100%; border: none; background: transparent;" />
+          <input type="number" data-index="${newIndex}" class="edit-item-qty" value="1" min="0" step="0.01" inputmode="decimal" style="width: 100%; border: none; background: transparent;" />
         </td>
         <td style="padding: 8px; border: 1px solid #d1d5db;">
-          <input type="number" data-index="${newIndex}" class="edit-item-price" value="0" min="0" step="0.01" style="width: 100%; border: none; background: transparent;" />
+          <input type="number" data-index="${newIndex}" class="edit-item-price" value="0" min="0" step="0.01" inputmode="decimal" style="width: 100%; border: none; background: transparent;" />
         </td>
         <td style="padding: 8px; border: 1px solid #d1d5db;">
           <input type="text" data-index="${newIndex}" class="edit-item-category" placeholder="الفئة" style="width: 100%; border: none; background: transparent;" />
@@ -163,6 +166,7 @@ async function showEditInvoiceForm(invoiceId) {
       `;
       tbody.appendChild(newRow);
       attachLiveSearchToRow(newRow);
+      recomputeEditTotals();
     });
     
     // Remove item functionality
@@ -177,6 +181,23 @@ async function showEditInvoiceForm(invoiceId) {
     
     // Attach live search to all current rows
     $$('#edit-items-body tr').forEach(tr => attachLiveSearchToRow(tr));
+
+    // Recompute totals on edit inputs to mirror create form UX
+    function recomputeEditTotals() {
+      let total = 0;
+      $$('#edit-items-body tr').forEach(tr => {
+        const qty = Number(tr.querySelector('.edit-item-qty')?.value || 0);
+        const price = Number(tr.querySelector('.edit-item-price')?.value || 0);
+        total += qty * price;
+      });
+      const el = document.getElementById('edit-total-val');
+      if (el) el.textContent = String(Number(total.toFixed(2)));
+    }
+    modal.addEventListener('input', (e) => {
+      if (e.target.closest('#edit-items-body')) recomputeEditTotals();
+    });
+    // Initialize totals on open
+    recomputeEditTotals();
 
     // Form submission
     $('#edit-invoice-form').addEventListener('submit', async (e) => {

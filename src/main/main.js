@@ -444,13 +444,13 @@ ipcMain.handle('plumbers:delete', async (_e, id) => {
 ipcMain.handle('invoices:create', async (_e, payload) => {
   try {
     if (!payload?.customer?.name || !payload?.customer?.phone) {
-      throw new Error('Customer name and phone are required');
+      throw new Error('اسم العميل ورقم الهاتف مطلوبان');
     }
     const invoice = await invoiceService.createInvoice(payload);
     await enqueueSync('Invoice', 'upsert', invoice);
     return invoice;
   } catch (err) {
-    return { error: true, message: err.message };
+    return { error: true, message: err.message || 'تعذر إنشاء الفاتورة' };
   }
 });
 
