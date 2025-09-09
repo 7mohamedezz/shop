@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   backup: {
     run: () => ipcRenderer.invoke('backup:run'),
+    create: () => ipcRenderer.invoke('backup:run'),
     restore: () => ipcRenderer.invoke('backup:restore')
   }
 });

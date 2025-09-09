@@ -6,7 +6,7 @@ module.exports = function loadCustomer(connection) {
   }, { timestamps: true });
 
   CustomerSchema.index({ name: 1 });
-  CustomerSchema.index({ phone: 1 });
+  CustomerSchema.index({ phone: 1 }, { unique: true });
 
   return connection.models.Customer || connection.model('Customer', CustomerSchema);
 };

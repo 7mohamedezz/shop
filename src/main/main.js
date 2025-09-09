@@ -371,9 +371,13 @@ ipcMain.handle('products:delete', async (_e, id) => {
 
 // Customer IPC
 ipcMain.handle('customers:upsert', async (_e, payload) => {
-  const customer = await customerService.upsertCustomerByPhone(payload);
-  await enqueueSync('Customer', 'upsert', customer);
-  return customer;
+  try {
+    const customer = await customerService.upsertCustomerByPhone(payload);
+    await enqueueSync('Customer', 'upsert', customer);
+    return customer;
+  } catch (error) {
+    throw new Error(error?.message || 'Failed to create customer');
+  }
 });
 
 ipcMain.handle('customers:list', async () => customerService.listCustomers());

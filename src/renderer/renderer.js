@@ -2,7 +2,7 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 // Debug mode flag - set to false to disable all console logging
-const DEBUG_MODE = false;
+const DEBUG_MODE = true;
 
 function currency(n) { return (Number(n || 0)).toFixed(2); }
 
@@ -1630,6 +1630,12 @@ if (customerForm) {
       await loadCustomers();
     } catch (error) {
       console.error('Error creating customer:', error);
+      const msg = typeof error?.message === 'string' ? error.message : 'تعذر إنشاء العميل';
+      if (window.showErrorMessage) {
+        showErrorMessage(msg);
+      } else {
+        alert(msg);
+      }
     }
   });
 }
