@@ -1188,8 +1188,9 @@ async function loadInvoices() {
         </div>
         <div>
           ${inv.deleted ? `
+            <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
             <button type="button" data-id="${externalId}" class="btn-restore">استعادة</button>
-            <button type="button" data-id="${externalId}" class="btn-delete btn-hard-delete">حذف نهائي</button>
+            <button type="button" data-id="${externalId}" class="btn-hard-delete">حذف نهائي</button>
           ` : `
             <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
             <button type="button" data-id="${externalId}" class="btn-print">طباعة</button>
