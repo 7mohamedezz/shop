@@ -172,9 +172,12 @@ async function showEditInvoiceForm(invoiceId) {
     // Remove item functionality
     modal.addEventListener('click', (e) => {
       if (e.target.classList.contains('remove-item-btn')) {
+        e.preventDefault();
+        e.stopPropagation();
         const row = e.target.closest('tr');
         if (row) {
           row.remove();
+          recomputeEditTotals();
         }
       }
     });

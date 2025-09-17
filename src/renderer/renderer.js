@@ -434,7 +434,9 @@ function newItemRow() {
     recomputeTotals();
   });
 
-  tr.querySelector('.remove-item').addEventListener('click', () => {
+  tr.querySelector('.remove-item').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     tr.remove();
     updateRowNumbers();
     recomputeTotals();
@@ -472,7 +474,11 @@ function newPaymentRow() {
     <td><input type="text" class="pay-note" placeholder="ملاحظة/طريقة" /></td>
     <td><button type="button" class="remove-payment">✕</button></td>
   `;
-  tr.querySelector('.remove-payment').addEventListener('click', () => tr.remove());
+  tr.querySelector('.remove-payment').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    tr.remove();
+  });
   return tr;
 }
 
@@ -1063,7 +1069,12 @@ function buildReturnForm(inv) {
       if (!d) return;
       applySelection({ id: d.getAttribute('data-id'), name: d.getAttribute('data-name'), price: Number(d.getAttribute('data-price')) });
     });
-    tr.querySelector('.ret-remove').addEventListener('click', () => { tr.remove(); recomputeReturnTotal(); });
+    tr.querySelector('.ret-remove').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      tr.remove();
+      recomputeReturnTotal();
+    });
     qtyInput.addEventListener('input', recomputeReturnTotal);
     priceInput.addEventListener('input', recomputeReturnTotal);
     tr.getData = () => {
@@ -1225,6 +1236,11 @@ $('#invoice-search')?.addEventListener('input', debounce(() => {
 $('#invoice-list').addEventListener('click', async (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
+  
+  // Prevent event bubbling that might interfere with inputs
+  e.preventDefault();
+  e.stopPropagation();
+  
   const id = btn.getAttribute('data-id');
   // Accept either numeric invoiceNumber or 24-hex ObjectId
   const isNumericId = (v) => /^\d+$/.test(String(v).trim());
@@ -1375,8 +1391,14 @@ function mountProductRow(product) {
   const editBtn = row.querySelector('.btn-edit');
   const deleteBtn = row.querySelector('.btn-delete');
   
-  editBtn.addEventListener('click', () => setEditMode(product));
-  deleteBtn.addEventListener('click', async () => {
+  editBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditMode(product);
+  });
+  deleteBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
     if (!ok) return;
     try {
@@ -1479,8 +1501,14 @@ function mountProductRow(product) {
     const editBtn = row.querySelector('.btn-edit');
     const deleteBtn = row.querySelector('.btn-delete');
     
-    editBtn.addEventListener('click', () => setEditMode(p));
-    deleteBtn.addEventListener('click', async () => {
+    editBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setEditMode(p);
+    });
+    deleteBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
       if (!ok) return;
       try {
@@ -1532,23 +1560,29 @@ function mountProductRowReadonly(p) {
   const editBtn = row.querySelector('.btn-edit');
   const deleteBtn = row.querySelector('.btn-delete');
   
-  editBtn.addEventListener('click', () => setEditMode(p));
-  deleteBtn.addEventListener('click', async () => {
-        const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
-        if (!ok) return;
-        try {
-          const res = await window.api.products.delete(p._id);
-          if (res && res.error) throw new Error(res.message || 'فشل حذف المنتج');
-          row.remove();
-          // Show success message
-          const msg = $('#lowstock-message');
-          if (msg) { msg.textContent = 'تم حذف المنتج بنجاح'; setTimeout(() => (msg.textContent = ''), 2000); }
-          // Refresh the low stock list
-          try { await loadLowStockProducts(); } catch {}
-        } catch (err) {
-          showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
-        }
-      });
+  editBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditMode(p);
+  });
+  deleteBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
+    if (!ok) return;
+    try {
+      const res = await window.api.products.delete(p._id);
+      if (res && res.error) throw new Error(res.message || 'فشل حذف المنتج');
+      row.remove();
+      // Show success message
+      const msg = $('#lowstock-message');
+      if (msg) { msg.textContent = 'تم حذف المنتج بنجاح'; setTimeout(() => (msg.textContent = ''), 2000); }
+      // Refresh the low stock list
+      try { await loadLowStockProducts(); } catch {}
+    } catch (err) {
+      showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
+    }
+  });
   
   function setEditMode(product) {
     row.innerHTML = `
@@ -1612,8 +1646,14 @@ function mountProductRowReadonly(p) {
     const editBtn = row.querySelector('.btn-edit');
     const deleteBtn = row.querySelector('.btn-delete');
     
-    editBtn.addEventListener('click', () => setEditMode(product));
-    deleteBtn.addEventListener('click', async () => {
+    editBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setEditMode(product);
+    });
+    deleteBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
       if (!ok) return;
       try {
@@ -1748,6 +1788,8 @@ async function loadCustomers() {
   container.onclick = async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
     const id = btn.getAttribute('data-id');
     if (btn.classList.contains('btn-view-bills')) {
       const si = $('#search-input');
@@ -1815,6 +1857,8 @@ async function loadPlumbers() {
   container.onclick = async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
     if (btn.classList.contains('btn-view-bills')) {
       const name = btn.getAttribute('data-name') || '';
       const si = $('#search-input');
