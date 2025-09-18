@@ -281,5 +281,17 @@
 
   <script src="renderer.js"></script>
   <script src="edit-invoice.js"></script>
+
+  <!-- Non-blocking confirmation modal -->
+  <div id="confirm-modal" style="display:none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1001; align-items: center; justify-content: center;">
+    <div style="background: #fff; padding: 20px; border-radius: 8px; min-width: 360px; max-width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.2); text-align: center;">
+      <h3 id="confirm-title" style="margin-top:0; margin-bottom:12px">تأكيد الإجراء</h3>
+      <p id="confirm-message" style="margin-bottom:20px;">هل أنت متأكد؟</p>
+      <div style="display:flex; gap:12px; justify-content:center">
+        <button id="confirm-cancel-btn" style="background:#6b7280; color:#fff; min-width: 80px;">إلغاء</button>
+        <button id="confirm-ok-btn" style="background:#dc2626; color:#fff; min-width: 80px;">تأكيد</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

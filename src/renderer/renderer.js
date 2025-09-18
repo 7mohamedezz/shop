@@ -6,6 +6,42 @@ const DEBUG_MODE = true;
 
 function currency(n) { return (Number(n || 0)).toFixed(2); }
 
+// Non-blocking confirmation modal helper
+async function showConfirmation({ title = 'تأكيد', message = 'هل أنت متأكد؟' }) {
+  const modal = document.getElementById('confirm-modal');
+  if (!modal) return false; // Fallback if modal not present
+
+  const titleEl = document.getElementById('confirm-title');
+  const messageEl = document.getElementById('confirm-message');
+  const btnCancel = document.getElementById('confirm-cancel-btn');
+  const btnOk = document.getElementById('confirm-ok-btn');
+
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+
+  modal.style.display = 'flex';
+
+  return new Promise(resolve => {
+    function cleanup() {
+      btnCancel.removeEventListener('click', onCancel);
+      btnOk.removeEventListener('click', onOk);
+      modal.removeEventListener('click', onBackdrop);
+    }
+    function close(result) {
+      modal.style.display = 'none';
+      cleanup();
+      resolve(result);
+    }
+    function onCancel() { close(false); }
+    function onOk() { close(true); }
+    function onBackdrop(e) { if (e.target === modal) close(false); }
+
+    btnCancel.addEventListener('click', onCancel);
+    btnOk.addEventListener('click', onOk);
+    modal.addEventListener('click', onBackdrop);
+  });
+}
+
 // Simple modal helper for editing a person's name/phone (customer/plumber)
 async function openEditPersonModal({ title = 'تعديل', name = '', phone = '', requirePhone = false }) {
   const modal = document.getElementById('edit-person-modal');
@@ -150,6 +186,50 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('❌ Unhandled promise rejection:', event.reason);
   showErrorMessage(`خطأ في العملية: ${event.reason?.message || event.reason || 'خطأ غير معروف'}`);
 });
+
+// Prevent form submissions from jamming the UI
+document.addEventListener('submit', (event) => {
+  const form = event.target;
+  const submitButton = form.querySelector('button[type="submit"]');
+  
+  if (submitButton && submitButton.disabled) {
+    event.preventDefault();
+    return;
+  }
+});
+
+// Scroll to element with smooth animation and visual feedback
+function scrollToElement(elementId) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+    showErrorMessage('لم يتم العثور على العنصر المطلوب');
+    return;
+  }
+  
+  // Scroll to element with smooth behavior
+  element.scrollIntoView({ 
+    behavior: 'smooth', 
+    block: 'center',
+    inline: 'nearest'
+  });
+  
+  // Add visual highlight effect
+  const originalBackground = element.style.backgroundColor;
+  const originalTransition = element.style.transition;
+  
+  element.style.transition = 'background-color 0.3s ease';
+  element.style.backgroundColor = '#fbbf24'; // Yellow highlight
+  
+  // Remove highlight after 2 seconds
+  setTimeout(() => {
+    element.style.backgroundColor = originalBackground;
+    setTimeout(() => {
+      element.style.transition = originalTransition;
+    }, 300);
+  }, 2000);
+  
+  showErrorMessage('تم الانتقال إلى العنصر', 'success');
+}
 
 // Enhanced error display function with modern styling
 function showErrorMessage(message, type = 'error') {
@@ -380,6 +460,22 @@ function applyDiscountsToAllRows() {
   recomputeTotals();
 }
 
+// Debounce utility to limit how often a function can run
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// Create a debounced version of recomputeTotals for input fields
+const debouncedRecomputeTotals = debounce(recomputeTotals, 250);
+
 // Invoice form state
 function newItemRow() {
   const tr = document.createElement('tr');
@@ -434,13 +530,6 @@ function newItemRow() {
     recomputeTotals();
   });
 
-  tr.querySelector('.remove-item').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    tr.remove();
-    updateRowNumbers();
-    recomputeTotals();
-  });
 
   function updateRowSubtotal() {
     const qty = Number(qtyInput.value || 0);
@@ -449,7 +538,10 @@ function newItemRow() {
   }
 
   for (const input of [priceInput, qtyInput]) {
-    input.addEventListener('input', () => { updateRowSubtotal(); recomputeTotals(); });
+    input.addEventListener('input', () => { 
+      updateRowSubtotal(); 
+      debouncedRecomputeTotals(); 
+    });
   }
 
   tr.getData = () => ({
@@ -474,11 +566,13 @@ function newPaymentRow() {
     <td><input type="text" class="pay-note" placeholder="ملاحظة/طريقة" /></td>
     <td><button type="button" class="remove-payment">✕</button></td>
   `;
-  tr.querySelector('.remove-payment').addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    tr.remove();
-  });
+  
+  // Add event listener for payment amount changes
+  const amountInput = tr.querySelector('.pay-amount');
+  if (amountInput) {
+    amountInput.addEventListener('input', recomputeTotals);
+  }
+  
   return tr;
 }
 
@@ -500,29 +594,60 @@ $('#add-item').addEventListener('click', () => {
 });
 $('#add-payment').addEventListener('click', () => { $('#payments-body').appendChild(newPaymentRow()); });
 
+// Event Delegation for removing items and payments
+function handleTableClick(e) {
+  const button = e.target.closest('button');
+  if (!button) return;
+
+  const isRemoveItem = button.classList.contains('remove-item');
+  const isRemovePayment = button.classList.contains('remove-payment');
+
+  if (isRemoveItem || isRemovePayment) {
+    const row = button.closest('tr');
+    if (!row) return;
+
+    console.log(`[${Date.now()}] Delete button clicked. Hiding row...`);
+    row.style.display = 'none';
+    console.log(`[${Date.now()}] Row hidden. Scheduling async removal and recalculation...`);
+
+    setTimeout(() => {
+      console.log(`[${Date.now()}] Async task started. Removing row from DOM...`);
+      row.remove();
+      console.log(`[${Date.now()}] Row removed. Starting updates...`);
+      if (isRemoveItem) {
+        updateRowNumbers();
+      }
+      recomputeTotals();
+      console.log(`[${Date.now()}] All updates finished.`);
+    }, 50);
+  }
+}
+
+$('#items-body').addEventListener('click', handleTableClick);
+$('#payments-body').addEventListener('click', handleTableClick);
+
 // Re-apply discounts when discount fields change
 $('#discount-abogali')?.addEventListener('input', applyDiscountsToAllRows);
 $('#discount-br')?.addEventListener('input', applyDiscountsToAllRows);
 
-// Adjust recomputeTotals to respect updated price (already done by using price inputs)
 function recomputeTotals() {
   let total = 0;
-  $$('#items-body tr').forEach(tr => {
-    // Don't apply discount here - it should already be applied
-    const qty = Number(tr.querySelector('.item-qty').value || 0);
-    const price = Number(tr.querySelector('.item-price').value || 0);
-    const subtotal = qty * price;
-    const cell = tr.querySelector('.item-subtotal');
-    if (cell) cell.textContent = currency(subtotal);
-    total += subtotal;
+  // OPTIMIZED: Sum up the subtotals directly from the DOM, which is much faster.
+  $$('#items-body tr .item-subtotal').forEach(cell => {
+    total += Number(cell.textContent || 0);
   });
+
   let paid = 0;
-  $$('#payments-body tr').forEach(tr => { paid += Number(tr.querySelector('.pay-amount').value || 0); });
+  $$('#payments-body tr .pay-amount').forEach(input => {
+    paid += Number(input.value || 0);
+  });
+
   $('#total').textContent = currency(total);
   $('#remaining').textContent = currency(total - paid);
 }
 
-$('#invoice-form').addEventListener('input', recomputeTotals);
+// Removed global form input listener - it was causing input jamming
+// Individual inputs handle their own total recalculation
 
 $('#invoice-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -637,7 +762,7 @@ if (liveCustomerSearch && liveCustomerResults) {
       liveCustomerResults.style.display = 'block';
       return;
     }
-    liveCustomerResults.innerHTML = list.map(c => `<div class="opt" data-name="${c.name}" data-phone="${c.phone}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${c.name}${c.phone?` — ${c.phone}`:''}</div>`).join('');
+    liveCustomerResults.innerHTML = list.map(c => `<div class="opt" data-name="${c.name}" data-phone="${c.phone}" data-id="${normalizeObjId(c._id)}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${c.name}${c.phone?` — ${c.phone}`:''} <button type="button" class="scroll-to-btn" data-target="customer-card-${normalizeObjId(c._id)}" style="float:left; background:#3b82f6; color:white; border:none; padding:2px 6px; border-radius:3px; font-size:10px; margin-left:4px">انتقال</button></div>`).join('');
     liveCustomerResults.style.display = 'block';
   };
 
@@ -654,16 +779,28 @@ if (liveCustomerSearch && liveCustomerResults) {
   };
   liveCustomerSearch.addEventListener('input', doSearchCustomers);
   liveCustomerResults.addEventListener('click', (e) => {
+    // Handle scroll-to button click
+    if (e.target.classList.contains('scroll-to-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const targetId = e.target.getAttribute('data-target');
+      scrollToElement(targetId);
+      liveCustomerResults.style.display = 'none';
+      liveCustomerSearch.value = '';
+      return;
+    }
+    
     const opt = e.target.closest('.opt');
     if (!opt) return;
     liveCustomerSearch.value = opt.getAttribute('data-name');
     liveCustomerResults.style.display = 'none';
   });
   document.addEventListener('click', (e) => { 
-    // Don't hide if clicking on delete buttons or other important UI elements
+    // Don't hide if clicking on delete buttons, scroll-to buttons, or other important UI elements
     if (e.target.classList.contains('remove-payment-btn') || 
         e.target.classList.contains('edit-payment-btn') || 
         e.target.classList.contains('btn-delete') ||
+        e.target.classList.contains('scroll-to-btn') ||
         e.target.closest('.invoice-actions') ||
         e.target.closest('button')) {
       return;
@@ -683,7 +820,7 @@ if (livePlumberSearch && livePlumberResults) {
       livePlumberResults.style.display = 'block';
       return;
     }
-    livePlumberResults.innerHTML = list.map(p => `<div class="opt" data-name="${p.name}" data-phone="${p.phone || ''}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${p.name}${p.phone?` — ${p.phone}`:''}</div>`).join('');
+    livePlumberResults.innerHTML = list.map(p => `<div class="opt" data-name="${p.name}" data-phone="${p.phone || ''}" data-id="${normalizeObjId(p._id)}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${p.name}${p.phone?` — ${p.phone}`:''} <button type="button" class="scroll-to-btn" data-target="plumber-card-${normalizeObjId(p._id)}" style="float:left; background:#10b981; color:white; border:none; padding:2px 6px; border-radius:3px; font-size:10px; margin-left:4px">انتقال</button></div>`).join('');
     livePlumberResults.style.display = 'block';
   };
 
@@ -700,16 +837,28 @@ if (livePlumberSearch && livePlumberResults) {
   };
   livePlumberSearch.addEventListener('input', doSearchPlumbers);
   livePlumberResults.addEventListener('click', (e) => {
+    // Handle scroll-to button click
+    if (e.target.classList.contains('scroll-to-btn')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const targetId = e.target.getAttribute('data-target');
+      scrollToElement(targetId);
+      livePlumberResults.style.display = 'none';
+      livePlumberSearch.value = '';
+      return;
+    }
+    
     const opt = e.target.closest('.opt');
     if (!opt) return;
     livePlumberSearch.value = opt.getAttribute('data-name');
     livePlumberResults.style.display = 'none';
   });
   document.addEventListener('click', (e) => { 
-    // Don't hide if clicking on delete buttons or other important UI elements
+    // Don't hide if clicking on delete buttons, scroll-to buttons, or other important UI elements
     if (e.target.classList.contains('remove-payment-btn') || 
         e.target.classList.contains('edit-payment-btn') || 
         e.target.classList.contains('btn-delete') ||
+        e.target.classList.contains('scroll-to-btn') ||
         e.target.closest('.invoice-actions') ||
         e.target.closest('button')) {
       return;
@@ -927,18 +1076,18 @@ async function showInvoiceDetail(id) {
   });
   $('#btn-delete-invoice').addEventListener('click', async () => {
     const externalId = invoiceNumberExt ?? idStr;
-    const ok = confirm('هل أنت متأكد من حذف هذه الفاتورة؟ هذا الإجراء لا يمكن التراجع عنه.');
+    const ok = await showConfirmation({ title: 'حذف فاتورة', message: 'هل أنت متأكد من حذف هذه الفاتورة؟ هذا الإجراء لا يمكن التراجع عنه.' });
     if (!ok) return;
     try {
       const res = await window.api.invoices.delete(externalId);
-      if (res && res.error) { alert('فشل حذف الفاتورة: ' + (res.message || '')); return; }
+      if (res && res.error) { showErrorMessage('فشل حذف الفاتورة: ' + (res.message || '')); return; }
       // Refresh list and clear detail panel
       await loadInvoices();
       const panel = $('#invoice-detail');
       if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
       showErrorMessage('تم حذف الفاتورة بنجاح', 'success');
     } catch (e) {
-      alert('خطأ في حذف الفاتورة: ' + (e.message || ''));
+      showErrorMessage('خطأ في حذف الفاتورة: ' + (e.message || ''));
     }
   });
   $('#add-payment-btn').addEventListener('click', async (e) => {
@@ -957,33 +1106,73 @@ async function showInvoiceDetail(id) {
     const note = $('#new-payment-note').value || '';
     
     if (amount <= 0) {
-      alert('يرجى إدخال مبلغ صحيح');
+      showErrorMessage('يرجى إدخال مبلغ صحيح');
       $('#new-payment-amount').focus();
       return;
     }
     
     try {
-      await window.api.invoices.addPayment(invoiceNumberExt ?? idStr, { amount, date, note });
-      // Refresh the detail view to show the new payment
-      await showInvoiceDetail(invoiceNumberExt ?? idStr);
+      const result = await window.api.invoices.addPayment(invoiceNumberExt ?? idStr, { amount, date, note });
       
-      // Clear the form and restore focus to amount input
-      setTimeout(() => {
-        const amountInput = $('#new-payment-amount');
-        const dateInput = $('#new-payment-date');
-        const noteInput = $('#new-payment-note');
+      // Add the new payment row to the existing table instead of full refresh
+      const paymentsTable = document.querySelector('.inv-payments tbody');
+      if (paymentsTable && result.payments) {
+        const newPayment = result.payments[result.payments.length - 1];
+        const paymentIndex = result.payments.length - 1;
+        const paymentDate = formatGregorian(newPayment.date, false);
+        const paymentId = newPayment._id || `temp-${paymentIndex}`;
         
-        if (amountInput) amountInput.value = '';
-        if (dateInput) dateInput.value = '';
-        if (noteInput) noteInput.value = '';
+        const newRow = document.createElement('tr');
+        newRow.setAttribute('data-payment-index', paymentIndex);
+        newRow.setAttribute('data-payment-id', paymentId);
+        newRow.innerHTML = `
+          <td class="payment-date-cell">${paymentDate}</td>
+          <td class="payment-note-cell">${newPayment.note || ''}</td>
+          <td class="payment-amount-cell">${Number(newPayment.amount).toFixed(2)}</td>
+          <td>
+            <button type="button" class="edit-payment-btn" data-payment-index="${paymentIndex}">تعديل</button>
+            <button type="button" class="remove-payment-btn" data-payment-index="${paymentIndex}">حذف</button>
+          </td>
+        `;
+        paymentsTable.appendChild(newRow);
         
-        // Focus the amount input for next payment entry
-        if (amountInput) {
-          amountInput.focus();
+        // Update local invoice data
+        inv.payments = result.payments;
+        
+        // Update totals display
+        const itemsTotal = (inv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
+        const paidTotal = result.payments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
+        const remaining = itemsTotal - paidTotal;
+        
+        // Find and update totals displays
+        const paidTotalEl = document.querySelector('div[style*="إجمالي المدفوع"] div[style*="font-size:20px"]');
+        const remainingEl = document.querySelector('div[style*="المتبقي"] div[style*="font-size:20px"]');
+        
+        if (paidTotalEl) {
+          paidTotalEl.textContent = paidTotal.toFixed(2);
         }
-      }, 100);
+        if (remainingEl) {
+          remainingEl.textContent = remaining.toFixed(2);
+          remainingEl.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
+        }
+      }
+      
+      // Clear the form and keep focus on amount input
+      const amountInput = $('#new-payment-amount');
+      const dateInput = $('#new-payment-date');
+      const noteInput = $('#new-payment-note');
+      
+      if (amountInput) amountInput.value = '';
+      if (dateInput) dateInput.value = '';
+      if (noteInput) noteInput.value = '';
+      
+      // Keep focus on amount input for continuous entry
+      if (amountInput) {
+        amountInput.focus();
+      }
+      
     } catch (error) {
-      alert('خطأ في إضافة الدفعة: ' + error.message);
+      showErrorMessage('خطأ في إضافة الدفعة: ' + error.message);
     }
   });
   
@@ -1042,7 +1231,7 @@ async function showInvoiceDetail(id) {
       const newAmount = Number(row.querySelector('.edit-payment-amount').value);
       
       if (newAmount <= 0) {
-        alert('يرجى إدخال مبلغ صحيح');
+        showErrorMessage('يرجى إدخال مبلغ صحيح');
         return;
       }
       
@@ -1057,62 +1246,96 @@ async function showInvoiceDetail(id) {
         };
         
         // Call API to update invoice with new payments
-        await window.api.invoices.update(invoiceId, { payments: updatedPayments });
+        const result = await window.api.invoices.update(invoiceId, { payments: updatedPayments });
         
-        // Refresh the detail view
-        await showInvoiceDetail(invoiceId);
+        // Update the row back to view mode with new values
+        const paymentDate = formatGregorian(newDate, false);
+        row.innerHTML = `
+          <td class="payment-date-cell">${paymentDate}</td>
+          <td class="payment-note-cell">${newNote}</td>
+          <td class="payment-amount-cell">${newAmount.toFixed(2)}</td>
+          <td>
+            <button type="button" class="edit-payment-btn" data-payment-index="${paymentIndex}">تعديل</button>
+            <button type="button" class="remove-payment-btn" data-payment-index="${paymentIndex}">حذف</button>
+          </td>
+        `;
+        
+        // Update local invoice data
+        inv.payments = updatedPayments;
+        
+        // Update totals display
+        const itemsTotal = (inv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
+        const paidTotal = updatedPayments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
+        const remaining = itemsTotal - paidTotal;
+        
+        // Find and update totals displays
+        const paidTotalEl = document.querySelector('div[style*="إجمالي المدفوع"] div[style*="font-size:20px"]');
+        const remainingEl = document.querySelector('div[style*="المتبقي"] div[style*="font-size:20px"]');
+        
+        if (paidTotalEl) {
+          paidTotalEl.textContent = paidTotal.toFixed(2);
+        }
+        if (remainingEl) {
+          remainingEl.textContent = remaining.toFixed(2);
+          remainingEl.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
+        }
+        
         showErrorMessage('تم تحديث الدفعة بنجاح', 'success');
       } catch (error) {
-        alert('خطأ في تحديث الدفعة: ' + error.message);
+        showErrorMessage('خطأ في تحديث الدفعة: ' + error.message);
       }
     }
     
     // Payment cancel edit functionality
     else if (target.classList.contains('cancel-payment-edit-btn')) {
-      // Refresh the detail view to cancel edit
-      await showInvoiceDetail(invoiceId);
+      // Restore the row to view mode without API call
+      const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
+      const payment = inv.payments[paymentIndex];
+      
+      if (payment) {
+        const row = target.closest('tr');
+        const paymentDate = formatGregorian(payment.date, false);
+        row.innerHTML = `
+          <td class="payment-date-cell">${paymentDate}</td>
+          <td class="payment-note-cell">${payment.note || ''}</td>
+          <td class="payment-amount-cell">${Number(payment.amount).toFixed(2)}</td>
+          <td>
+            <button type="button" class="edit-payment-btn" data-payment-index="${paymentIndex}">تعديل</button>
+            <button type="button" class="remove-payment-btn" data-payment-index="${paymentIndex}">حذف</button>
+          </td>
+        `;
+      }
     }
     
     // Payment removal functionality
     else if (target.classList.contains('remove-payment-btn')) {
-      if (DEBUG_MODE) console.log('Remove payment button clicked');
       const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
       const payment = inv.payments[paymentIndex];
       
-      const ok = confirm(`هل أنت متأكد من حذف هذه الدفعة؟\nالمبلغ: ${payment.amount}\nالملاحظة: ${payment.note || 'لا توجد'}`);
+      const ok = await showConfirmation({ title: 'حذف دفعة', message: `هل أنت متأكد من حذف هذه الدفعة؟\nالمبلغ: ${payment.amount}\nالملاحظة: ${payment.note || 'لا توجد'}` });
       if (!ok) return;
       
       try {
-        // Store which input was focused before operation
-        const focusedElement = document.activeElement;
-        const focusedInputId = focusedElement?.id || null;
-        const focusedInputValue = focusedElement?.value || null;
-        
         // Remove the payment from the invoice data
         const updatedPayments = inv.payments.filter((_, idx) => idx !== paymentIndex);
         
         // Call API to update invoice with removed payment
-        await window.api.invoices.update(invoiceId, { payments: updatedPayments });
-        
-        // Refresh the detail view
-        await showInvoiceDetail(invoiceId);
-        
-        // Restore focus to the previously focused input if it still exists
-        setTimeout(() => {
-          if (focusedInputId) {
-            const inputToFocus = document.getElementById(focusedInputId);
-            if (inputToFocus && inputToFocus.type !== 'button') {
-              inputToFocus.focus();
-              if (focusedInputValue && inputToFocus.value === '') {
-                inputToFocus.value = focusedInputValue;
-              }
-            }
+        window.api.invoices.update(invoiceId, { payments: updatedPayments }).then(() => {
+          // Remove the payment row from DOM without full refresh
+          const paymentRow = target.closest('tr');
+          if (paymentRow) {
+            paymentRow.remove();
           }
-        }, 100);
-        
-        showErrorMessage('تم حذف الدفعة بنجاح', 'success');
+          
+          // Update the local invoice data
+          inv.payments = updatedPayments;
+          
+          showErrorMessage('تم حذف الدفعة بنجاح', 'success');
+        }).catch(error => {
+          showErrorMessage('خطأ في حذف الدفعة: ' + error.message);
+        });
       } catch (error) {
-        alert('خطأ في حذف الدفعة: ' + error.message);
+        showErrorMessage('خطأ في حذف الدفعة: ' + error.message);
       }
     }
   });
@@ -1235,12 +1458,13 @@ function buildReturnForm(inv) {
       if (!d) return;
       applySelection({ id: d.getAttribute('data-id'), name: d.getAttribute('data-name'), price: Number(d.getAttribute('data-price')) });
     });
-    tr.querySelector('.ret-remove').addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      tr.remove();
-      recomputeReturnTotal();
-    });
+    const retRemoveBtn = tr.querySelector('.ret-remove');
+    retRemoveBtn.onclick = function() {
+      console.log('Return item delete button clicked');
+      this.closest('tr').remove();
+      console.log('Return item row removed successfully');
+      // recomputeReturnTotal(); // Temporarily disabled
+    };
     qtyInput.addEventListener('input', recomputeReturnTotal);
     priceInput.addEventListener('input', recomputeReturnTotal);
     tr.getData = () => {
@@ -1458,7 +1682,7 @@ $('#invoice-list').addEventListener('click', async (e) => {
   } else if (btn.classList.contains('btn-delete')) {
     // Soft delete invoice
     try {
-      const ok = confirm('هل تريد حذف الفاتورة؟ يمكن استعادتها لاحقًا من قائمة المحذوفة.');
+      const ok = await showConfirmation({ title: 'حذف فاتورة', message: 'هل تريد حذف الفاتورة؟ يمكن استعادتها لاحقًا من قائمة المحذوفة.' });
       if (!ok) return;
       const res = await window.api.invoices.delete(isNumericId(id) ? Number(id) : String(id));
       if (res && res.error) throw new Error(res.message || 'فشل حذف الفاتورة');
@@ -1482,7 +1706,7 @@ $('#invoice-list').addEventListener('click', async (e) => {
     }
   } else if (btn.classList.contains('btn-hard-delete')) {
     try {
-      const ok = confirm('تحذير: حذف نهائي لا يمكن التراجع عنه. هل أنت متأكد؟');
+      const ok = await showConfirmation({ title: 'حذف نهائي', message: 'تحذير: حذف نهائي لا يمكن التراجع عنه. هل أنت متأكد؟' });
       if (!ok) return;
       const res = await window.api.invoices.hardDelete(isNumericId(id) ? Number(id) : String(id));
       if (res && res.error) throw new Error(res.message || 'فشل الحذف النهائي');
@@ -1565,7 +1789,7 @@ function mountProductRow(product) {
   deleteBtn.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
+    const ok = await showConfirmation({ title: 'حذف منتج', message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.' });
     if (!ok) return;
     try {
       const res = await window.api.products.delete(product._id);
@@ -1675,7 +1899,7 @@ function mountProductRow(product) {
     deleteBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
+      const ok = await showConfirmation({ title: 'حذف منتج', message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.' });
       if (!ok) return;
       try {
         const res = await window.api.products.delete(p._id);
@@ -1734,7 +1958,7 @@ function mountProductRowReadonly(p) {
   deleteBtn.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
+    const ok = await showConfirmation({ title: 'حذف منتج', message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.' });
     if (!ok) return;
     try {
       const res = await window.api.products.delete(p._id);
@@ -1820,7 +2044,7 @@ function mountProductRowReadonly(p) {
     deleteBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const ok = confirm('هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.');
+      const ok = await showConfirmation({ title: 'حذف منتج', message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.' });
       if (!ok) return;
       try {
         const res = await window.api.products.delete(p._id);
@@ -1885,7 +2109,7 @@ if (customerForm) {
       if (window.showErrorMessage) {
         showErrorMessage(msg);
       } else {
-        alert(msg);
+        showErrorMessage(msg);
       }
     }
   });
@@ -1937,6 +2161,10 @@ async function loadCustomers() {
     const row = document.createElement('div');
     row.className = 'list-card';
     const cid = normalizeObjId(c._id);
+    // Add unique ID for scroll-to functionality
+    row.id = `customer-card-${cid}`;
+    row.setAttribute('data-name', c.name.toLowerCase());
+    row.setAttribute('data-phone', c.phone);
     row.innerHTML = `
       <div>
         <strong>${c.name}</strong> — ${c.phone}
@@ -1982,7 +2210,7 @@ async function loadCustomers() {
         showErrorMessage('خطأ في التعديل: ' + err.message);
       }
     } else if (btn.classList.contains('btn-delete')) {
-      if (!confirm('حذف هذا العميل؟ سيبقى سجل الفواتير مرتبطاً بالمعرف.')) return;
+      if (!await showConfirmation({ title: 'حذف عميل', message: 'حذف هذا العميل؟ سيبقى سجل الفواتير مرتبطاً بالمعرف.' })) return;
       try {
         const res = await window.api.customers.delete(id);
         if (res && !res.error) {
@@ -2007,6 +2235,10 @@ async function loadPlumbers() {
     const row = document.createElement('div');
     row.className = 'list-card';
     const pid = normalizeObjId(p._id);
+    // Add unique ID for scroll-to functionality
+    row.id = `plumber-card-${pid}`;
+    row.setAttribute('data-name', p.name.toLowerCase());
+    row.setAttribute('data-phone', p.phone || '');
     row.innerHTML = `
       <div>
         <strong>${p.name}</strong>${p.phone ? ' — ' + p.phone : ''}
@@ -2052,7 +2284,7 @@ async function loadPlumbers() {
       }
     } else if (btn.classList.contains('btn-delete')) {
       const id = btn.getAttribute('data-id');
-      if (!confirm('حذف هذا السباك؟')) return;
+      if (!await showConfirmation({ title: 'حذف سباك', message: 'حذف هذا السباك؟' })) return;
       try {
         const res = await window.api.plumbers.delete(id);
         if (res && !res.error) {
