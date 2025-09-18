@@ -1,6 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  receive: (channel, func) => {
+    const validChannels = ['show-error'];
+    if (validChannels.includes(channel)) {
+      // Deliberately strip event as it includes `sender`
+      ipcRenderer.on(channel, (event, ...args) => func(...args));
+    }
+  },
   products: {
     create: (data) => ipcRenderer.invoke('products:create', data),
     search: (prefix) => ipcRenderer.invoke('products:search', prefix),

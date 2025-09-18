@@ -1,12 +1,29 @@
 const { getLocalModels } = require('../database/db');
 
-async function upsertPlumberByName(data) {
+async function upsertPlumber(data) {
   const { Plumber } = getLocalModels();
+  const { name, phone } = data;
+
+  if (!name) {
+    throw new Error('اسم السباك مطلوب.');
+  }
+
+  // If a phone number is provided, check if it already exists
+  if (phone) {
+    const existing = await Plumber.findOne({ phone: phone }).lean();
+    // If a plumber with this phone exists and it's not the same plumber we might be updating
+    if (existing && existing.name !== name) {
+      throw new Error(`رقم الهاتف ${phone} مسجل بالفعل لسباك آخر.`);
+    }
+  }
+
+  // Try to find a plumber by name to update, or create a new one
   const plumber = await Plumber.findOneAndUpdate(
-    { name: data.name },
-    { $set: { name: data.name, phone: data.phone || '' } },
-    { new: true, upsert: true }
+    { name: name },
+    { $set: { name, phone: phone || '' } },
+    { new: true, upsert: true, runValidators: true, context: 'query' }
   );
+
   return plumber.toObject();
 }
 
@@ -38,4 +55,4 @@ async function deletePlumber(id) {
   return doc;
 }
 
-module.exports = { upsertPlumberByName, listPlumbers, searchPlumbers, updatePlumber, deletePlumber };
+module.exports = { upsertPlumber, listPlumbers, searchPlumbers, updatePlumber, deletePlumber };

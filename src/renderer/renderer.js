@@ -1,6 +1,13 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+// Listen for errors from the main process
+if (window.api && typeof window.api.receive === 'function') {
+  window.api.receive('show-error', (message) => {
+    showErrorMessage(message || 'حدث خطأ غير متوقع');
+  });
+}
+
 // Debug mode flag - set to false to disable all console logging
 const DEBUG_MODE = true;
 
@@ -2119,13 +2126,34 @@ const plumberForm = $('#plumber-form');
 if (plumberForm) {
   plumberForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const nameInput = $('#new-plumber-name');
+    const phoneInput = $('#new-plumber-phone');
+    const name = nameInput.value.trim();
+    const phone = phoneInput.value.trim();
+
+    if (!name) {
+      showErrorMessage('يرجى إدخال اسم السباك.');
+      return;
+    }
+
     try {
-      await window.api.plumbers.upsert({ name: $('#new-plumber-name').value.trim(), phone: $('#new-plumber-phone').value.trim() });
-      $('#new-plumber-name').value = '';
-      $('#new-plumber-phone').value = '';
+      const result = await window.api.plumbers.upsert({ name, phone });
+      
+      if (result && result.error) {
+        // Handle errors returned from the main process (e.g., duplicate phone)
+        throw new Error(result.message);
+      }
+      
+      // Success
+      nameInput.value = '';
+      phoneInput.value = '';
       await loadPlumbers();
+      showErrorMessage('تم حفظ السباك بنجاح.', 'success');
+
     } catch (error) {
+      // Handle thrown errors (from API or validation)
       console.error('Error creating plumber:', error);
+      showErrorMessage(error.message || 'فشل حفظ السباك.');
     }
   });
 }

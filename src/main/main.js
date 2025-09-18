@@ -262,9 +262,10 @@ ipcMain.handle('products:updatePopularity', async (event, { id, quantity }) => {
     console.error('❌ Error creating window:', error);
     console.error('Stack trace:', error.stack);
     
-    // Show error dialog to user
-    const { dialog } = require('electron');
-    dialog.showErrorBox('Application Error', `Failed to start application: ${error.message}`);
+    // Send a non-blocking error message to the renderer process
+    if (mainWindow) {
+      mainWindow.webContents.send('show-error', `Failed to start application: ${error.message}`);
+    }
   }
 }
 
@@ -409,9 +410,14 @@ ipcMain.handle('customers:delete', async (_e, id) => {
 
 // Plumber IPC
 ipcMain.handle('plumbers:upsert', async (_e, payload) => {
-  const plumber = await plumberService.upsertPlumberByName(payload);
-  await enqueueSync('Plumber', 'upsert', plumber);
-  return plumber;
+  try {
+    const plumber = await plumberService.upsertPlumber(payload);
+    await enqueueSync('Plumber', 'upsert', plumber);
+    return plumber;
+  } catch (error) {
+    console.error('❌ Error upserting plumber:', error);
+    return { error: true, message: error.message };
+  }
 });
 ipcMain.handle('plumbers:list', async () => plumberService.listPlumbers());
 ipcMain.handle('plumbers:search', async (_e, prefix) => plumberService.searchPlumbers(prefix));
