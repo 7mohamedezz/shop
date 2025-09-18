@@ -364,11 +364,44 @@ async function addPaymentToInvoice(invoiceId, payment) {
     inv = await Invoice.findById(validId);
   }
   if (!inv) throw new Error('Invoice not found');
-  inv.payments.push({ amount: payment.amount, date: payment.date || new Date(), note: payment.note || '' });
-  inv.recomputeTotals();
-  await inv.save();
-  await inv.populate([{ path: 'customer' }, { path: 'items.product' }]);
-  return inv.toObject();
+  const newPayment = { amount: payment.amount, date: payment.date || new Date(), note: payment.note || '' };
+  
+  // Use $push to add the payment atomically
+  const updatedInv = await Invoice.findByIdAndUpdate(
+    inv._id,
+    { 
+      $push: { payments: newPayment },
+      $set: { updatedAt: new Date() }
+    },
+    { new: true, runValidators: true }
+  );
+  
+  if (!updatedInv) {
+    throw new Error('Invoice not found after adding payment');
+  }
+  
+  // Recompute totals after adding payment
+  const itemsTotal = (updatedInv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
+  const paidTotal = (updatedInv.payments || []).filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
+  
+  // Update totals
+  await Invoice.findByIdAndUpdate(
+    inv._id,
+    {
+      $set: {
+        itemsTotal,
+        paidTotal,
+        remaining: itemsTotal - paidTotal,
+        updatedAt: new Date()
+      }
+    }
+  );
+  
+  // Get the final updated invoice with populated fields
+  const finalInv = await Invoice.findById(inv._id)
+    .populate([{ path: 'customer' }, { path: 'items.product' }]);
+    
+  return finalInv.toObject();
 }
 
 async function updateInvoice(invoiceId, updateData) {
@@ -481,15 +514,56 @@ async function updateInvoice(invoiceId, updateData) {
     inv.items = normalized;
   }
   
+  // Update payments if provided
+  if (updateData.payments !== undefined) {
+    inv.payments = updateData.payments.map(p => ({
+      amount: Number(p.amount || 0),
+      date: p.date ? new Date(p.date) : new Date(),
+      note: String(p.note || ''),
+      _id: p._id // preserve existing payment IDs if they exist
+    }));
+  }
+  
   // Update notes
   if (updateData.notes !== undefined) {
     inv.notes = updateData.notes;
   }
   
-  inv.recomputeTotals();
-  await inv.save();
-  await inv.populate([{ path: 'customer' }, { path: 'items.product' }]);
-  return inv.toObject();
+  // Use findOneAndUpdate to avoid version conflicts
+  const updateFields = {};
+  
+  if (updateData.items) updateFields.items = inv.items;
+  if (updateData.payments !== undefined) updateFields.payments = inv.payments;
+  if (updateData.notes !== undefined) updateFields.notes = inv.notes;
+  if (updateData.customer) {
+    updateFields.customer = inv.customer;
+    updateFields.customerName = inv.customerName;
+    updateFields.customerPhone = inv.customerPhone;
+  }
+  if (updateData.plumberName !== undefined) updateFields.plumberName = inv.plumberName;
+  if (updateData.discountAbogaliPercent !== undefined) updateFields.discountAbogaliPercent = inv.discountAbogaliPercent;
+  if (updateData.discountBrPercent !== undefined) updateFields.discountBrPercent = inv.discountBrPercent;
+  
+  // Compute totals manually and add to update fields
+  const itemsTotal = (inv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
+  const paidTotal = (inv.payments || []).filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
+  updateFields.itemsTotal = itemsTotal;
+  updateFields.paidTotal = paidTotal;
+  updateFields.remaining = itemsTotal - paidTotal;
+  updateFields.updatedAt = new Date();
+  
+  const updatedInv = await Invoice.findByIdAndUpdate(
+    inv._id,
+    { $set: updateFields },
+    { new: true, runValidators: true }
+  );
+  
+  if (!updatedInv) {
+    throw new Error('Invoice not found after update');
+  }
+  
+  await updatedInv.populate([{ path: 'customer' }, { path: 'items.product' }]);
+  return updatedInv.toObject();
 }
 
 async function updateInvoiceItemsAndNotes(invoiceId, items, notes) {
@@ -1000,6 +1074,100 @@ async function initializeInvoiceCounter() {
   }
 }
 
+async function updateReturnInvoice(returnId, updateData) {
+  console.log('updateReturnInvoice called with:', { returnId, updateData });
+  const models = getLocalModels();
+  
+  // Check if models are available
+  if (!models || !models.ReturnInvoice || !models.Invoice || !models.Product) {
+    throw new Error('Database connection not available. Cannot update return invoice.');
+  }
+  
+  const { ReturnInvoice, Invoice, Product } = models;
+  
+  // Find the return invoice
+  const validId = toObjectIdString(returnId);
+  console.log('Normalized return ID:', validId);
+  if (!validId) throw new Error('Invalid return invoice ID format');
+  
+  const returnInvoice = await ReturnInvoice.findById(validId);
+  console.log('Found return invoice:', returnInvoice ? 'yes' : 'no');
+  if (!returnInvoice) throw new Error('Return invoice not found');
+  
+  // Update the return invoice
+  if (updateData.items) {
+    // Calculate the difference in quantities for stock adjustment
+    const oldItems = returnInvoice.items || [];
+    const newItems = updateData.items || [];
+    
+    // Adjust stock - first reverse the old return quantities, then apply the new ones
+    try {
+      for (const oldItem of oldItems) {
+        const qty = Number(oldItem.qty || 0);
+        if (qty <= 0) continue;
+        
+        if (oldItem.productId && Types.ObjectId.isValid(oldItem.productId)) {
+          // Reverse the old return (decrease stock back)
+          await Product.updateOne({ _id: oldItem.productId }, { $inc: { stock: -qty } });
+        } else if (oldItem.productName) {
+          // Fallback by name
+          await Product.updateOne({ name: oldItem.productName }, { $inc: { stock: -qty } });
+        }
+      }
+      
+      for (const newItem of newItems) {
+        const qty = Number(newItem.qty || 0);
+        if (qty <= 0) continue;
+        
+        if (newItem.productId && Types.ObjectId.isValid(newItem.productId)) {
+          // Apply the new return (increase stock)
+          await Product.updateOne({ _id: newItem.productId }, { $inc: { stock: qty } });
+        } else if (newItem.productName || newItem.product) {
+          // Fallback by name
+          const name = newItem.productName || newItem.product;
+          await Product.updateOne({ name }, { $inc: { stock: qty } });
+        }
+      }
+    } catch (e) {
+      console.warn('Stock adjustment failed during return update:', e?.message);
+    }
+    
+    returnInvoice.items = newItems;
+  }
+  
+  returnInvoice.updatedAt = new Date();
+  
+  const updated = await returnInvoice.save();
+  console.log('Return invoice updated and saved');
+  
+  // Update the original invoice's payment to reflect the new return total
+  if (updateData.items) {
+    const originalInvoiceId = returnInvoice.originalInvoice;
+    const originalInvoice = await Invoice.findById(originalInvoiceId);
+    
+    if (originalInvoice) {
+      // Remove old return payment
+      originalInvoice.payments = originalInvoice.payments.filter(p => (p.note || '').trim() !== 'مرتجع');
+      
+      // Calculate new return total
+      const newReturnTotal = (updateData.items || []).reduce((s, it) => s + Number(it.qty || 0) * Number(it.price || 0), 0);
+      
+      // Add new return payment if there's a return total
+      if (newReturnTotal > 0) {
+        originalInvoice.payments.push({ amount: newReturnTotal, date: new Date(), note: 'مرتجع' });
+      }
+      
+      // Recompute totals
+      originalInvoice.recomputeTotals();
+      await originalInvoice.save();
+      console.log('Original invoice updated with new return totals');
+    }
+  }
+  
+  console.log('updateReturnInvoice completed successfully');
+  return updated.toObject();
+}
+
 module.exports = {
   createInvoice,
   listInvoices,
@@ -1009,6 +1177,7 @@ module.exports = {
   updateInvoiceItemsAndNotes,
   archiveInvoice,
   createReturnInvoice,
+  updateReturnInvoice,
   generateInvoicePrintableHtml,
   deleteInvoice,
   restoreInvoice,

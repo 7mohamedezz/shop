@@ -38,7 +38,8 @@ contextBridge.exposeInMainWorld('api', {
     initializeCounter: () => ipcRenderer.invoke('invoices:initializeCounter')
   },
   returns: {
-    create: (data) => ipcRenderer.invoke('returns:create', data)
+    create: (data) => ipcRenderer.invoke('returns:create', data),
+    update: (returnId, updateData) => ipcRenderer.invoke('returns:update', { returnId, updateData })
   },
   print: {
     invoice: (invoiceId, options = {}) => ipcRenderer.invoke('print:invoice', { invoiceId, ...options })

@@ -761,20 +761,24 @@ async function showInvoiceDetail(id) {
       </tr>`;
     }).join('');
     
-    // Payments table
-    const paymentsRows = (inv.payments || []).map(p => {
+    // Payments table with edit/delete functionality
+    const paymentsRows = (inv.payments || []).map((p, idx) => {
       const paymentDate = formatGregorian(p.date, false);
-      return `<tr>
-        <td>${paymentDate}</td>
-        <td>${p.note || ''}</td>
-        <td>${Number(p.amount).toFixed(2)}</td>
-        <td><button type="button" class="remove-payment-btn" data-payment-id="${p._id || 'temp'}">حذف</button></td>
+      const paymentId = p._id || `temp-${idx}`;
+      return `<tr data-payment-index="${idx}" data-payment-id="${paymentId}">
+        <td class="payment-date-cell">${paymentDate}</td>
+        <td class="payment-note-cell">${p.note || ''}</td>
+        <td class="payment-amount-cell">${Number(p.amount).toFixed(2)}</td>
+        <td>
+          <button type="button" class="edit-payment-btn" data-payment-index="${idx}">تعديل</button>
+          <button type="button" class="remove-payment-btn" data-payment-index="${idx}">حذف</button>
+        </td>
       </tr>`;
     }).join('');
 
     // Return section (if any)
     const hasReturn = !!inv.returnInvoice;
-    const returnRows = hasReturn ? (inv.returnInvoice.items || []).map(ri => {
+    const returnRows = hasReturn ? (inv.returnInvoice.items || []).map((ri, idx) => {
       const t = Number(ri.qty || 0) * Number(ri.price || 0);
       return `<tr>
         <td>${ri.productName || ri.product || ''}</td>
@@ -834,7 +838,7 @@ async function showInvoiceDetail(id) {
 
       <h4>المدفوعات</h4>
       <table class="items-table inv-payments" style="margin-top:8px">
-        <thead><tr><th>التاريخ</th><th>ملاحظة</th><th>المبلغ</th><th></th></tr></thead>
+        <thead><tr><th>التاريخ</th><th>ملاحظة</th><th>المبلغ</th><th style="width:120px">الإجراءات</th></tr></thead>
         <tbody>${paymentsRows}</tbody>
       </table>
       
@@ -943,11 +947,114 @@ async function showInvoiceDetail(id) {
     }
   });
   
-  // Handle payment removal (if needed)
+  // Handle payment and return item edit/delete
   panel.addEventListener('click', async (e) => {
-    if (e.target.classList.contains('remove-payment-btn')) {
-      // Note: You might want to add a removePayment API endpoint
-      alert('ميزة حذف المدفوعات غير متوفرة حالياً');
+    const target = e.target;
+    const invoiceId = invoiceNumberExt ?? idStr;
+    
+    // Only handle our specific button clicks
+    if (!target.classList.contains('edit-payment-btn') && 
+        !target.classList.contains('save-payment-btn') && 
+        !target.classList.contains('cancel-payment-edit-btn') && 
+        !target.classList.contains('remove-payment-btn')) {
+      return; // Let other events bubble normally
+    }
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Payment edit functionality
+    if (target.classList.contains('edit-payment-btn')) {
+      if (DEBUG_MODE) console.log('Edit payment button clicked');
+      const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
+      const payment = inv.payments[paymentIndex];
+      if (!payment) {
+        if (DEBUG_MODE) console.log('Payment not found at index:', paymentIndex);
+        return;
+      }
+      
+      const row = target.closest('tr');
+      const dateCell = row.querySelector('.payment-date-cell');
+      const noteCell = row.querySelector('.payment-note-cell');
+      const amountCell = row.querySelector('.payment-amount-cell');
+      const actionsCell = row.querySelector('td:last-child');
+      
+      // Convert to edit mode
+      const originalDate = new Date(payment.date).toISOString().split('T')[0];
+      row.innerHTML = `
+        <td><input type="date" class="edit-payment-date" value="${originalDate}" style="width:100%" /></td>
+        <td><input type="text" class="edit-payment-note" value="${payment.note || ''}" style="width:100%" /></td>
+        <td><input type="number" class="edit-payment-amount" value="${payment.amount}" step="0.01" min="0" style="width:100%" /></td>
+        <td>
+          <button type="button" class="save-payment-btn" data-payment-index="${paymentIndex}">حفظ</button>
+          <button type="button" class="cancel-payment-edit-btn" data-payment-index="${paymentIndex}">إلغاء</button>
+        </td>
+      `;
+    }
+    
+    // Payment save functionality
+    else if (target.classList.contains('save-payment-btn')) {
+      const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
+      const row = target.closest('tr');
+      
+      const newDate = row.querySelector('.edit-payment-date').value;
+      const newNote = row.querySelector('.edit-payment-note').value;
+      const newAmount = Number(row.querySelector('.edit-payment-amount').value);
+      
+      if (newAmount <= 0) {
+        alert('يرجى إدخال مبلغ صحيح');
+        return;
+      }
+      
+      try {
+        // Update the payment in the invoice data
+        const updatedPayments = [...inv.payments];
+        updatedPayments[paymentIndex] = {
+          ...updatedPayments[paymentIndex],
+          date: newDate,
+          note: newNote,
+          amount: newAmount
+        };
+        
+        // Call API to update invoice with new payments
+        await window.api.invoices.update(invoiceId, { payments: updatedPayments });
+        
+        // Refresh the detail view
+        await showInvoiceDetail(invoiceId);
+        showErrorMessage('تم تحديث الدفعة بنجاح', 'success');
+      } catch (error) {
+        alert('خطأ في تحديث الدفعة: ' + error.message);
+      }
+    }
+    
+    // Payment cancel edit functionality
+    else if (target.classList.contains('cancel-payment-edit-btn')) {
+      // Refresh the detail view to cancel edit
+      await showInvoiceDetail(invoiceId);
+    }
+    
+    // Payment removal functionality
+    else if (target.classList.contains('remove-payment-btn')) {
+      if (DEBUG_MODE) console.log('Remove payment button clicked');
+      const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
+      const payment = inv.payments[paymentIndex];
+      
+      const ok = confirm(`هل أنت متأكد من حذف هذه الدفعة؟\nالمبلغ: ${payment.amount}\nالملاحظة: ${payment.note || 'لا توجد'}`);
+      if (!ok) return;
+      
+      try {
+        // Remove the payment from the invoice data
+        const updatedPayments = inv.payments.filter((_, idx) => idx !== paymentIndex);
+        
+        // Call API to update invoice with removed payment
+        await window.api.invoices.update(invoiceId, { payments: updatedPayments });
+        
+        // Refresh the detail view
+        await showInvoiceDetail(invoiceId);
+        showErrorMessage('تم حذف الدفعة بنجاح', 'success');
+      } catch (error) {
+        alert('خطأ في حذف الدفعة: ' + error.message);
+      }
     }
   });
   

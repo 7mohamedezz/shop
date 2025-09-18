@@ -458,29 +458,41 @@ ipcMain.handle('invoices:list', async (_e, filters) => invoiceService.listInvoic
 ipcMain.handle('invoices:getById', async (_e, id) => invoiceService.getInvoiceById(id));
 
 ipcMain.handle('invoices:addPayment', async (_e, { invoiceId, payment }) => {
-  console.log("IPC 'invoices:addPayment' received:", { invoiceIdType: typeof invoiceId, invoiceId });
-  const s = String(invoiceId ?? '').trim();
-  let keyForSync = null;
-  let targetId = null;
-  if (/^\d+$/.test(s)) {
-    // Accept numeric invoiceNumber
-    targetId = Number(s);
-    keyForSync = targetId;
-  } else {
-    // Normalize invoiceId to a valid ObjectId string defensively
-    const normalizedId = toObjectIdString(invoiceId)
-      || toObjectIdString(invoiceId?._id)
-      || toObjectIdString(invoiceId?.id);
-    console.log("IPC 'invoices:addPayment' normalizedId:", normalizedId);
-    if (!normalizedId) {
-      return { error: true, message: `Invalid invoice ID format` };
+  try {
+    console.log("IPC 'invoices:addPayment' received:", { invoiceIdType: typeof invoiceId, invoiceId });
+    const s = String(invoiceId ?? '').trim();
+    let keyForSync = null;
+    let targetId = null;
+    if (/^\d+$/.test(s)) {
+      // Accept numeric invoiceNumber
+      targetId = Number(s);
+      keyForSync = targetId;
+    } else {
+      // Normalize invoiceId to a valid ObjectId string defensively
+      const normalizedId = toObjectIdString(invoiceId)
+        || toObjectIdString(invoiceId?._id)
+        || toObjectIdString(invoiceId?.id);
+      console.log("IPC 'invoices:addPayment' normalizedId:", normalizedId);
+      if (!normalizedId) {
+        return { error: true, message: `Invalid invoice ID format` };
+      }
+      targetId = normalizedId;
+      keyForSync = normalizedId;
     }
-    targetId = normalizedId;
-    keyForSync = normalizedId;
+    const result = await invoiceService.addPaymentToInvoice(targetId, payment || {});
+    await enqueueSync('Invoice', 'update', { id: keyForSync, update: { payments: result.payments, remaining: result.remaining } });
+    return result;
+  } catch (error) {
+    console.error('Error occurred in handler for \'invoices:addPayment\':', error);
+    let userMessage = error.message;
+    
+    // Handle version errors specifically
+    if (error.name === 'VersionError') {
+      userMessage = 'تم تعديل الفاتورة من قبل مستخدم آخر. يرجى المحاولة مرة أخرى.';
+    }
+    
+    return { error: true, message: userMessage };
   }
-  const result = await invoiceService.addPaymentToInvoice(targetId, payment || {});
-  await enqueueSync('Invoice', 'update', { id: keyForSync, update: { payments: result.payments, remaining: result.remaining } });
-  return result;
 });
 
 ipcMain.handle('invoices:updateItemsAndNotes', async (_e, { invoiceId, items, notes }) => {
@@ -490,9 +502,21 @@ ipcMain.handle('invoices:updateItemsAndNotes', async (_e, { invoiceId, items, no
 });
 
 ipcMain.handle('invoices:update', async (_e, { invoiceId, updateData }) => {
-  const updated = await invoiceService.updateInvoice(invoiceId, updateData);
-  await enqueueSync('Invoice', 'update', { id: invoiceId, update: updateData });
-  return updated;
+  try {
+    const updated = await invoiceService.updateInvoice(invoiceId, updateData);
+    await enqueueSync('Invoice', 'update', { id: invoiceId, update: updateData });
+    return updated;
+  } catch (error) {
+    console.error('Error occurred in handler for \'invoices:update\':', error);
+    let userMessage = error.message;
+    
+    // Handle version errors specifically
+    if (error.name === 'VersionError') {
+      userMessage = 'تم تعديل الفاتورة من قبل مستخدم آخر. يرجى المحاولة مرة أخرى.';
+    }
+    
+    return { error: true, message: userMessage };
+  }
 });
 
 ipcMain.handle('invoices:archive', async (_e, invoiceId, archived) => {
@@ -544,6 +568,16 @@ ipcMain.handle('returns:create', async (_e, payload) => {
   const ret = await invoiceService.createReturnInvoice(payload);
   await enqueueSync('ReturnInvoice', 'upsert', ret);
   return ret;
+});
+
+ipcMain.handle('returns:update', async (_e, { returnId, updateData }) => {
+  try {
+    const updated = await invoiceService.updateReturnInvoice(returnId, updateData);
+    await enqueueSync('ReturnInvoice', 'update', { id: returnId, update: updateData });
+    return updated;
+  } catch (err) {
+    return { error: true, message: err.message };
+  }
 });
 
 ipcMain.handle('print:invoice', async (_e, payload) => {
