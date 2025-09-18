@@ -587,7 +587,7 @@ ipcMain.handle('returns:update', async (_e, { returnId, updateData }) => {
 });
 
 ipcMain.handle('print:invoice', async (_e, payload) => {
-  const { invoiceId, fontSize } = (payload && typeof payload === 'object') ? payload : { invoiceId: payload };
+  const { invoiceId, fontSize } = (payload && typeof payload === 'object') ? payload : { invoiceId: payload, fontSize: undefined };
   const html = await invoiceService.generateInvoicePrintableHtml(invoiceId, { fontSize });
   // Open a visible preview window and trigger Chromium's print preview (allows "Save to PDF")
   const win = new BrowserWindow({

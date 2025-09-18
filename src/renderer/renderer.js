@@ -147,7 +147,7 @@ async function displayInvoicesWithFilters(filters = {}) {
       if (!id) return;
       if (btn.classList.contains('btn-print')) {
         try {
-          await window.api.print.invoice(id, { fontSize: getCurrentFontSize() });
+          await window.api.print.invoice(id, { fontSize: getCurrentPrintFontSize() });
           showErrorMessage('تم إرسال الفاتورة للطباعة', 'success');
         } catch (error) { showErrorMessage('خطأ في الطباعة: ' + error.message); }
       } else if (btn.classList.contains('btn-view')) {
@@ -357,17 +357,26 @@ async function safeApiCall(apiCall, errorContext = '', loadingElement = null) {
 }
 
 // ===================== UI Font Size Control =====================
-function getStoredFontSize() {
-  const v = localStorage.getItem('app-font-size') || localStorage.getItem('uiFontSize');
+function getStoredFontSize(key = 'app-font-size', fallback = 16) {
+  const v = localStorage.getItem(key);
   const n = Number(v);
-  return Number.isFinite(n) ? Math.min(24, Math.max(12, n)) : 16;
+  if (key === 'app-font-size') {
+    return Number.isFinite(n) ? Math.min(24, Math.max(12, n)) : fallback;
+  }
+  // For print font size
+  return Number.isFinite(n) ? Math.min(20, Math.max(8, n)) : fallback;
 }
+
 function applyUiFontSize(px) {
-  // Apply base font size for the whole app
   document.body.style.fontSize = px + 'px';
 }
+
 function getCurrentFontSize() {
-  return getStoredFontSize();
+  return getStoredFontSize('app-font-size', 16);
+}
+
+function getCurrentPrintFontSize() {
+  return getStoredFontSize('print-font-size', 12);
 }
 
 
@@ -2768,6 +2777,17 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('app-font-size', size);
       // Also save to old key for backward compatibility
       localStorage.setItem('uiFontSize', size);
+    });
+  }
+
+  // Print font size control
+  const printFontSize = $('#settings-print-font-size');
+  const printFontSizeValue = $('#settings-print-font-size-value');
+  if (printFontSize && printFontSizeValue) {
+    printFontSize.addEventListener('input', (e) => {
+      const size = e.target.value;
+      printFontSizeValue.textContent = size + 'px';
+      localStorage.setItem('print-font-size', size);
     });
   }
 
