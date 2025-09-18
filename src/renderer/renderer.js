@@ -659,7 +659,19 @@ if (liveCustomerSearch && liveCustomerResults) {
     liveCustomerSearch.value = opt.getAttribute('data-name');
     liveCustomerResults.style.display = 'none';
   });
-  document.addEventListener('click', (e) => { if (!liveCustomerResults.contains(e.target) && e.target !== liveCustomerSearch) liveCustomerResults.style.display='none'; });
+  document.addEventListener('click', (e) => { 
+    // Don't hide if clicking on delete buttons or other important UI elements
+    if (e.target.classList.contains('remove-payment-btn') || 
+        e.target.classList.contains('edit-payment-btn') || 
+        e.target.classList.contains('btn-delete') ||
+        e.target.closest('.invoice-actions') ||
+        e.target.closest('button')) {
+      return;
+    }
+    if (!liveCustomerResults.contains(e.target) && e.target !== liveCustomerSearch) {
+      liveCustomerResults.style.display='none'; 
+    }
+  });
 }
 
 const livePlumberSearch = $('#live-plumber-search');
@@ -693,7 +705,19 @@ if (livePlumberSearch && livePlumberResults) {
     livePlumberSearch.value = opt.getAttribute('data-name');
     livePlumberResults.style.display = 'none';
   });
-  document.addEventListener('click', (e) => { if (!livePlumberResults.contains(e.target) && e.target !== livePlumberSearch) livePlumberResults.style.display='none'; });
+  document.addEventListener('click', (e) => { 
+    // Don't hide if clicking on delete buttons or other important UI elements
+    if (e.target.classList.contains('remove-payment-btn') || 
+        e.target.classList.contains('edit-payment-btn') || 
+        e.target.classList.contains('btn-delete') ||
+        e.target.closest('.invoice-actions') ||
+        e.target.closest('button')) {
+      return;
+    }
+    if (!livePlumberResults.contains(e.target) && e.target !== livePlumberSearch) {
+      livePlumberResults.style.display='none'; 
+    }
+  });
 }
 
 // Invoice list: view detail and create return invoice preserving sold prices
@@ -917,11 +941,14 @@ async function showInvoiceDetail(id) {
       alert('خطأ في حذف الفاتورة: ' + (e.message || ''));
     }
   });
-  $('#add-payment-btn').addEventListener('click', async () => {
+  $('#add-payment-btn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
     // Normalize Arabic-Indic digits and separators to parseable number
     const rawAmt = ($('#new-payment-amount').value || '').trim();
-    const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
-    const normalizedDigits = rawAmt.replace(/[٠-٩]/g, d => String(arabicDigits.indexOf(d)))
+    const arabicDigits = '۰۱۲۳۴۵۶۷۸۹';
+    const normalizedDigits = rawAmt.replace(/[۰-۹]/g, d => String(arabicDigits.indexOf(d)))
                                    .replace(/[٬,]/g, '') // remove thousand separators
                                    .replace(/[٫]/g, '.') // decimal separator to dot
                                    .replace(/\s+/g, '');
@@ -931,6 +958,7 @@ async function showInvoiceDetail(id) {
     
     if (amount <= 0) {
       alert('يرجى إدخال مبلغ صحيح');
+      $('#new-payment-amount').focus();
       return;
     }
     
@@ -938,10 +966,22 @@ async function showInvoiceDetail(id) {
       await window.api.invoices.addPayment(invoiceNumberExt ?? idStr, { amount, date, note });
       // Refresh the detail view to show the new payment
       await showInvoiceDetail(invoiceNumberExt ?? idStr);
-      // Clear the form
-      $('#new-payment-amount').value = '';
-      $('#new-payment-date').value = '';
-      $('#new-payment-note').value = '';
+      
+      // Clear the form and restore focus to amount input
+      setTimeout(() => {
+        const amountInput = $('#new-payment-amount');
+        const dateInput = $('#new-payment-date');
+        const noteInput = $('#new-payment-note');
+        
+        if (amountInput) amountInput.value = '';
+        if (dateInput) dateInput.value = '';
+        if (noteInput) noteInput.value = '';
+        
+        // Focus the amount input for next payment entry
+        if (amountInput) {
+          amountInput.focus();
+        }
+      }, 100);
     } catch (error) {
       alert('خطأ في إضافة الدفعة: ' + error.message);
     }
@@ -1043,6 +1083,11 @@ async function showInvoiceDetail(id) {
       if (!ok) return;
       
       try {
+        // Store which input was focused before operation
+        const focusedElement = document.activeElement;
+        const focusedInputId = focusedElement?.id || null;
+        const focusedInputValue = focusedElement?.value || null;
+        
         // Remove the payment from the invoice data
         const updatedPayments = inv.payments.filter((_, idx) => idx !== paymentIndex);
         
@@ -1051,6 +1096,20 @@ async function showInvoiceDetail(id) {
         
         // Refresh the detail view
         await showInvoiceDetail(invoiceId);
+        
+        // Restore focus to the previously focused input if it still exists
+        setTimeout(() => {
+          if (focusedInputId) {
+            const inputToFocus = document.getElementById(focusedInputId);
+            if (inputToFocus && inputToFocus.type !== 'button') {
+              inputToFocus.focus();
+              if (focusedInputValue && inputToFocus.value === '') {
+                inputToFocus.value = focusedInputValue;
+              }
+            }
+          }
+        }, 100);
+        
         showErrorMessage('تم حذف الدفعة بنجاح', 'success');
       } catch (error) {
         alert('خطأ في حذف الدفعة: ' + error.message);
