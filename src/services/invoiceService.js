@@ -656,13 +656,15 @@ async function createReturnInvoice(payload) {
     }
 
     const effectivePrice = Number((originalItem ? (originalItem.discountedPrice ?? originalItem.price) : Number(raw.price || 0)).toFixed(2));
+    const category = originalItem?.category || '';
 
     return {
       product: name,
       productId: pid ? Types.ObjectId.createFromHexString(pid) : undefined,
       productName: name,
       qty,
-      price: effectivePrice
+      price: effectivePrice,
+      category
     };
   }).filter(it => it.product && it.qty > 0);
 
@@ -798,6 +800,38 @@ async function generateInvoicePrintableHtml(invoiceId, options = {}) {
     .reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0)
     .toFixed(2));
   const remaining = Number((itemsTotal - (paidTotal + returnTotal)).toFixed(2));
+  // To ensure category is always present for returns, we'll build the items with a fresh lookup.
+  let returnItemsHtml = '';
+  if (inv.returnInvoice && Array.isArray(inv.returnInvoice.items)) {
+    const { Product } = getLocalModels();
+    const itemsWithCategory = [];
+    for (const item of inv.returnInvoice.items) {
+      if (item.category) {
+        itemsWithCategory.push(item);
+        continue;
+      }
+      // If category is missing, try to find it from the Product collection using a case-insensitive regex
+      const productName = (item.productName || item.product || '').trim();
+      if (!productName) {
+        itemsWithCategory.push(item); // push as is if no name
+        continue;
+      }
+      const productDoc = await Product.findOne({ name: { $regex: new RegExp(productName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') } }).lean();
+      itemsWithCategory.push({ ...item, category: productDoc?.category || '' });
+    }
+
+    returnItemsHtml = itemsWithCategory.map((ri, idx) => `
+      <tr>
+        <td style="text-align:center">${idx + 1}</td>
+        <td>${ri.productName || ri.product}</td>
+        <td>${ri.category || ''}</td>
+        <td style="text-align:center">${ri.qty}</td>
+        <td style="text-align:right">${Number(ri.price).toFixed(2)}</td>
+        <td style="text-align:right">${(Number(ri.qty || 0) * Number(ri.price || 0)).toFixed(2)}</td>
+      </tr>
+    `).join('');
+  }
+
   const returnSection = inv.returnInvoice ? `
     <h3>مرتجع</h3>
     <div>التاريخ: ${dayjs(inv.returnInvoice.createdAt).format('YYYY-MM-DD')}</div>
@@ -815,16 +849,7 @@ async function generateInvoicePrintableHtml(invoiceId, options = {}) {
         </tr>
       </thead>
       <tbody>
-        ${inv.returnInvoice.items.map((ri, idx) => `
-          <tr>
-            <td style="text-align:center">${idx + 1}</td>
-            <td>${ri.productName || ri.product}</td>
-            <td>${ri.category || ''}</td>
-            <td style="text-align:center">${ri.qty}</td>
-            <td style="text-align:right">${Number(ri.price).toFixed(2)}</td>
-            <td style="text-align:right">${(Number(ri.qty || 0) * Number(ri.price || 0)).toFixed(2)}</td>
-          </tr>
-        `).join('')}
+        ${returnItemsHtml}
       </tbody>
     </table>
   ` : '';
