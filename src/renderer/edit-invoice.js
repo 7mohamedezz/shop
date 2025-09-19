@@ -196,6 +196,9 @@ async function showEditInvoiceForm(invoiceId) {
       const el = document.getElementById('edit-total-val');
       if (el) el.textContent = String(Number(total.toFixed(2)));
     }
+    
+    // Make recomputeEditTotals globally accessible
+    window.recomputeEditTotals = recomputeEditTotals;
     modal.addEventListener('input', (e) => {
       if (e.target.closest('#edit-items-body')) recomputeEditTotals();
     });

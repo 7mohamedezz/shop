@@ -1160,16 +1160,22 @@ async function showInvoiceDetail(id) {
         const paidTotal = result.payments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
         const remaining = itemsTotal - paidTotal;
         
-        // Find and update totals displays
-        const paidTotalEl = document.querySelector('div[style*="إجمالي المدفوع"] div[style*="font-size:20px"]');
-        const remainingEl = document.querySelector('div[style*="المتبقي"] div[style*="font-size:20px"]');
-        
-        if (paidTotalEl) {
-          paidTotalEl.textContent = paidTotal.toFixed(2);
-        }
-        if (remainingEl) {
-          remainingEl.textContent = remaining.toFixed(2);
-          remainingEl.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
+        // Find and update totals displays using more reliable selectors
+        const totalsGrid = document.querySelector('div[style*="grid-template-columns: repeat(4"]');
+        if (totalsGrid) {
+          const totalBoxes = totalsGrid.querySelectorAll('div[style*="background:#ffffff"]');
+          totalBoxes.forEach(box => {
+            const label = box.querySelector('div[style*="font-size:12px"]');
+            const value = box.querySelector('div[style*="font-size:20px"]');
+            if (label && value) {
+              if (label.textContent.includes('إجمالي المدفوع')) {
+                value.textContent = paidTotal.toFixed(2);
+              } else if (label.textContent.includes('المتبقي')) {
+                value.textContent = remaining.toFixed(2);
+                value.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
+              }
+            }
+          });
         }
       }
       
@@ -1284,16 +1290,22 @@ async function showInvoiceDetail(id) {
         const paidTotal = updatedPayments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
         const remaining = itemsTotal - paidTotal;
         
-        // Find and update totals displays
-        const paidTotalEl = document.querySelector('div[style*="إجمالي المدفوع"] div[style*="font-size:20px"]');
-        const remainingEl = document.querySelector('div[style*="المتبقي"] div[style*="font-size:20px"]');
-        
-        if (paidTotalEl) {
-          paidTotalEl.textContent = paidTotal.toFixed(2);
-        }
-        if (remainingEl) {
-          remainingEl.textContent = remaining.toFixed(2);
-          remainingEl.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
+        // Find and update totals displays using more reliable selectors
+        const totalsGrid = document.querySelector('div[style*="grid-template-columns: repeat(4"]');
+        if (totalsGrid) {
+          const totalBoxes = totalsGrid.querySelectorAll('div[style*="background:#ffffff"]');
+          totalBoxes.forEach(box => {
+            const label = box.querySelector('div[style*="font-size:12px"]');
+            const value = box.querySelector('div[style*="font-size:20px"]');
+            if (label && value) {
+              if (label.textContent.includes('إجمالي المدفوع')) {
+                value.textContent = paidTotal.toFixed(2);
+              } else if (label.textContent.includes('المتبقي')) {
+                value.textContent = remaining.toFixed(2);
+                value.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
+              }
+            }
+          });
         }
         
         showErrorMessage('تم تحديث الدفعة بنجاح', 'success');
@@ -1345,6 +1357,29 @@ async function showInvoiceDetail(id) {
           
           // Update the local invoice data
           inv.payments = updatedPayments;
+          
+          // Update totals display after payment deletion
+          const itemsTotal = (inv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
+          const paidTotal = updatedPayments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
+          const remaining = itemsTotal - paidTotal;
+          
+          // Find and update totals displays using more reliable selectors
+          const totalsGrid = document.querySelector('div[style*="grid-template-columns: repeat(4"]');
+          if (totalsGrid) {
+            const totalBoxes = totalsGrid.querySelectorAll('div[style*="background:#ffffff"]');
+            totalBoxes.forEach(box => {
+              const label = box.querySelector('div[style*="font-size:12px"]');
+              const value = box.querySelector('div[style*="font-size:20px"]');
+              if (label && value) {
+                if (label.textContent.includes('إجمالي المدفوع')) {
+                  value.textContent = paidTotal.toFixed(2);
+                } else if (label.textContent.includes('المتبقي')) {
+                  value.textContent = remaining.toFixed(2);
+                  value.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
+                }
+              }
+            });
+          }
           
           showErrorMessage('تم حذف الدفعة بنجاح', 'success');
         }).catch(error => {
