@@ -1,9 +1,9 @@
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
 
 // Listen for errors from the main process
 if (window.api && typeof window.api.receive === 'function') {
-  window.api.receive('show-error', (message) => {
+  window.api.receive('show-error', message => {
     showErrorMessage(message || 'حدث خطأ غير متوقع');
   });
 }
@@ -11,7 +11,9 @@ if (window.api && typeof window.api.receive === 'function') {
 // Debug mode flag - set to false to disable all console logging
 const DEBUG_MODE = true;
 
-function currency(n) { return (Number(n || 0)).toFixed(2); }
+function currency(n) {
+  return Number(n || 0).toFixed(2);
+}
 
 // Non-blocking confirmation modal helper
 async function showConfirmation({ title = 'تأكيد', message = 'هل أنت متأكد؟' }) {
@@ -39,9 +41,15 @@ async function showConfirmation({ title = 'تأكيد', message = 'هل أنت �
       cleanup();
       resolve(result);
     }
-    function onCancel() { close(false); }
-    function onOk() { close(true); }
-    function onBackdrop(e) { if (e.target === modal) close(false); }
+    function onCancel() {
+      close(false);
+    }
+    function onOk() {
+      close(true);
+    }
+    function onBackdrop(e) {
+      if (e.target === modal) close(false);
+    }
 
     btnCancel.addEventListener('click', onCancel);
     btnOk.addEventListener('click', onOk);
@@ -82,13 +90,23 @@ async function openEditPersonModal({ title = 'تعديل', name = '', phone = ''
       cleanup();
       resolve(result);
     }
-    function onCancel() { close(null); }
-    function onBackdrop(e) { if (e.target === modal) close(null); }
+    function onCancel() {
+      close(null);
+    }
+    function onBackdrop(e) {
+      if (e.target === modal) close(null);
+    }
     function onSave() {
       const n = (nameEl.value || '').trim();
       const p = (phoneEl.value || '').trim();
-      if (!n) { errEl.textContent = 'الاسم مطلوب'; return; }
-      if (requirePhone && !p) { errEl.textContent = 'الهاتف مطلوب'; return; }
+      if (!n) {
+        errEl.textContent = 'الاسم مطلوب';
+        return;
+      }
+      if (requirePhone && !p) {
+        errEl.textContent = 'الهاتف مطلوب';
+        return;
+      }
       close({ name: n, phone: p });
     }
     btnCancel.addEventListener('click', onCancel);
@@ -96,7 +114,6 @@ async function openEditPersonModal({ title = 'تعديل', name = '', phone = ''
     modal.addEventListener('click', onBackdrop);
   });
 }
-
 
 // Display invoices by explicit filters (customerId, plumberName, archived)
 async function displayInvoicesWithFilters(filters = {}) {
@@ -112,17 +129,20 @@ async function displayInvoicesWithFilters(filters = {}) {
     list.forEach(inv => {
       let invoiceId = inv._id;
       if (typeof invoiceId === 'object' && invoiceId.buffer) {
-        invoiceId = Array.from(invoiceId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+        invoiceId = Array.from(invoiceId.buffer)
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
       } else if (typeof invoiceId === 'object' && invoiceId.toString) {
         invoiceId = invoiceId.toString();
       }
       // Prefer numeric invoiceNumber when available for external actions
-      const externalId = (inv.invoiceNumber != null) ? inv.invoiceNumber : invoiceId;
+      const externalId = inv.invoiceNumber != null ? inv.invoiceNumber : invoiceId;
       const card = document.createElement('div');
       card.className = 'list-card';
-      const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
-        ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
-        : '';
+      const discountInfo =
+        inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0
+          ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
+          : '';
       card.innerHTML = `
         <div>
           <div><strong>${inv.customerName || inv.customer?.name || ''}</strong> — ${inv.customerPhone || inv.customer?.phone || ''}</div>
@@ -140,7 +160,7 @@ async function displayInvoicesWithFilters(filters = {}) {
     });
 
     // Ensure a single click handler is attached
-    container.onclick = async (e) => {
+    container.onclick = async e => {
       const btn = e.target.closest('button');
       if (!btn) return;
       const id = btn.getAttribute('data-id');
@@ -149,7 +169,9 @@ async function displayInvoicesWithFilters(filters = {}) {
         try {
           await window.api.print.invoice(id, { fontSize: getCurrentPrintFontSize() });
           showErrorMessage('تم إرسال الفاتورة للطباعة', 'success');
-        } catch (error) { showErrorMessage('خطأ في الطباعة: ' + error.message); }
+        } catch (error) {
+          showErrorMessage('خطأ في الطباعة: ' + error.message);
+        }
       } else if (btn.classList.contains('btn-view')) {
         try {
           await showInvoiceDetail(id);
@@ -183,22 +205,22 @@ function formatGregorian(date, withTime = false) {
 }
 
 // Global error handler for the renderer process
-window.addEventListener('error', (event) => {
+window.addEventListener('error', event => {
   console.error('❌ Global error:', event.error);
   console.error('Stack trace:', event.error?.stack);
   showErrorMessage(`خطأ في التطبيق: ${event.error?.message || 'خطأ غير معروف'}`);
 });
 
-window.addEventListener('unhandledrejection', (event) => {
+window.addEventListener('unhandledrejection', event => {
   console.error('❌ Unhandled promise rejection:', event.reason);
   showErrorMessage(`خطأ في العملية: ${event.reason?.message || event.reason || 'خطأ غير معروف'}`);
 });
 
 // Prevent form submissions from jamming the UI
-document.addEventListener('submit', (event) => {
+document.addEventListener('submit', event => {
   const form = event.target;
   const submitButton = form.querySelector('button[type="submit"]');
-  
+
   if (submitButton && submitButton.disabled) {
     event.preventDefault();
     return;
@@ -212,21 +234,21 @@ function scrollToElement(elementId) {
     showErrorMessage('لم يتم العثور على العنصر المطلوب');
     return;
   }
-  
+
   // Scroll to element with smooth behavior
-  element.scrollIntoView({ 
-    behavior: 'smooth', 
+  element.scrollIntoView({
+    behavior: 'smooth',
     block: 'center',
     inline: 'nearest'
   });
-  
+
   // Add visual highlight effect
   const originalBackground = element.style.backgroundColor;
   const originalTransition = element.style.transition;
-  
+
   element.style.transition = 'background-color 0.3s ease';
   element.style.backgroundColor = '#fbbf24'; // Yellow highlight
-  
+
   // Remove highlight after 2 seconds
   setTimeout(() => {
     element.style.backgroundColor = originalBackground;
@@ -234,14 +256,14 @@ function scrollToElement(elementId) {
       element.style.transition = originalTransition;
     }, 300);
   }, 2000);
-  
+
   showErrorMessage('تم الانتقال إلى العنصر', 'success');
 }
 
 // Enhanced error display function with modern styling
 function showErrorMessage(message, type = 'error') {
   if (DEBUG_MODE) console.log(`${type === 'error' ? '❌' : '✅'} ${message}`);
-  
+
   // Create or update error display element
   let errorDiv = $('#global-error-display');
   if (!errorDiv) {
@@ -265,7 +287,7 @@ function showErrorMessage(message, type = 'error') {
     `;
     document.body.appendChild(errorDiv);
   }
-  
+
   // Set colors based on type
   if (type === 'error') {
     errorDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
@@ -280,15 +302,15 @@ function showErrorMessage(message, type = 'error') {
     errorDiv.style.color = '#2563eb';
     errorDiv.style.borderColor = 'rgba(59, 130, 246, 0.2)';
   }
-  
+
   errorDiv.textContent = message;
   errorDiv.style.display = 'block';
-  
+
   // Animate in
   setTimeout(() => {
     errorDiv.style.transform = 'translateX(0)';
   }, 10);
-  
+
   // Auto-hide after 5 seconds with animation
   setTimeout(() => {
     if (errorDiv) {
@@ -303,7 +325,7 @@ function showErrorMessage(message, type = 'error') {
 // Loading state management
 function showLoadingState(element, text = 'جاري التحميل...') {
   if (!element) return;
-  
+
   const originalContent = element.innerHTML;
   element.dataset.originalContent = originalContent;
   element.innerHTML = `
@@ -318,7 +340,7 @@ function showLoadingState(element, text = 'جاري التحميل...') {
 
 function hideLoadingState(element) {
   if (!element) return;
-  
+
   if (element.dataset.originalContent) {
     element.innerHTML = element.dataset.originalContent;
     delete element.dataset.originalContent;
@@ -327,22 +349,43 @@ function hideLoadingState(element) {
   element.disabled = false;
 }
 
+// Safe DOM query helper to prevent null errors
+function safeQuerySelector(parent, selector) {
+  try {
+    if (!parent) return null;
+    return parent.querySelector(selector);
+  } catch (error) {
+    console.warn('Safe query selector error:', error);
+    return null;
+  }
+}
+
+function safeQuerySelectorAll(parent, selector) {
+  try {
+    if (!parent) return [];
+    return parent.querySelectorAll(selector) || [];
+  } catch (error) {
+    console.warn('Safe query selector all error:', error);
+    return [];
+  }
+}
+
 // Enhanced API call wrapper with loading states
 async function safeApiCall(apiCall, errorContext = '', loadingElement = null) {
   try {
     if (DEBUG_MODE) console.log(`🔄 API Call: ${errorContext}`);
-    
+
     if (loadingElement) {
       showLoadingState(loadingElement, `جاري ${errorContext}...`);
     }
-    
+
     const result = await apiCall();
-    
+
     // Check if result contains error
     if (result && result.error) {
       throw new Error(result.message || 'API returned error');
     }
-    
+
     if (DEBUG_MODE) console.log(`✅ API Success: ${errorContext}`);
     return result;
   } catch (error) {
@@ -379,18 +422,17 @@ function getCurrentPrintFontSize() {
   return getStoredFontSize('print-font-size', 12);
 }
 
-
 // Enhanced API call wrapper with error handling
 async function safeApiCall(apiCall, errorContext = '') {
   try {
     if (DEBUG_MODE) console.log(`🔄 API Call: ${errorContext}`);
     const result = await apiCall();
-    
+
     // Check if result contains error
     if (result && result.error) {
       throw new Error(result.message || 'API returned error');
     }
-    
+
     if (DEBUG_MODE) console.log(`✅ API Success: ${errorContext}`);
     return result;
   } catch (error) {
@@ -401,24 +443,26 @@ async function safeApiCall(apiCall, errorContext = '') {
 }
 
 // Tabs
-$$('.tab').forEach(btn => btn.addEventListener('click', async () => {
-  $$('.tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  const tab = btn.getAttribute('data-tab');
-  $$('.page').forEach(p => p.classList.remove('active'));
-  $('#' + tab).classList.add('active');
-  // Lazy-load data for specific tabs
-  try {
-    if (tab === 'products') await loadProducts();
-    if (tab === 'low-stock') await loadLowStockProducts();
-    if (tab === 'create-invoice') loadDefaultDiscounts();
-    if (tab === 'settings') loadSettings();
-    
-    // Ensure font size is maintained across tab switches
-    const currentFontSize = getStoredFontSize();
-    applyUiFontSize(currentFontSize);
-  } catch {}
-}));
+$$('.tab').forEach(btn =>
+  btn.addEventListener('click', async () => {
+    $$('.tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.getAttribute('data-tab');
+    $$('.page').forEach(p => p.classList.remove('active'));
+    $('#' + tab).classList.add('active');
+    // Lazy-load data for specific tabs
+    try {
+      if (tab === 'products') await loadProducts();
+      if (tab === 'low-stock') await loadLowStockProducts();
+      if (tab === 'create-invoice') loadDefaultDiscounts();
+      if (tab === 'settings') loadSettings();
+
+      // Ensure font size is maintained across tab switches
+      const currentFontSize = getStoredFontSize();
+      applyUiFontSize(currentFontSize);
+    } catch {}
+  })
+);
 
 // Plumber autocomplete
 const plumberInput = $('#plumber-name');
@@ -426,14 +470,24 @@ const plumberSug = $('#plumber-suggestions');
 if (plumberInput) {
   plumberInput.addEventListener('input', async () => {
     const q = plumberInput.value.trim();
-    if (!q) { plumberSug.style.display = 'none'; plumberSug.innerHTML = ''; return; }
+    if (!q) {
+      plumberSug.style.display = 'none';
+      plumberSug.innerHTML = '';
+      return;
+    }
     const list = await window.api.plumbers.list();
     const filtered = list.filter(p => p.name.toLowerCase().startsWith(q.toLowerCase())).slice(0, 10);
-    if (!filtered.length) { plumberSug.style.display = 'none'; plumberSug.innerHTML=''; return; }
-    plumberSug.innerHTML = filtered.map(p => `<div data-name="${p.name}">${p.name}${p.phone ? ' — '+p.phone : ''}</div>`).join('');
+    if (!filtered.length) {
+      plumberSug.style.display = 'none';
+      plumberSug.innerHTML = '';
+      return;
+    }
+    plumberSug.innerHTML = filtered
+      .map(p => `<div data-name="${p.name}">${p.name}${p.phone ? ' — ' + p.phone : ''}</div>`)
+      .join('');
     plumberSug.style.display = 'block';
   });
-  plumberSug.addEventListener('click', (e) => {
+  plumberSug.addEventListener('click', e => {
     const d = e.target.closest('div');
     if (!d) return;
     plumberInput.value = d.getAttribute('data-name');
@@ -453,19 +507,19 @@ function applyDiscountToRow(tr) {
   const priceInput = tr.querySelector('.item-price');
   const basePrice = Number(tr.dataset.basePrice || 0);
   if (basePrice === 0) return; // No base price set yet
-  
+
   const cat = normalizeCategory(tr.dataset.category || '');
-  const abog = Number(($('#discount-abogali')?.value) || 0);
-  const br = Number(($('#discount-br')?.value) || 0);
-  
+  const abog = Number($('#discount-abogali')?.value || 0);
+  const br = Number($('#discount-br')?.value || 0);
+
   let finalPrice = basePrice;
-  
+
   if (cat === 'ابوغالي' && abog > 0) {
     finalPrice = basePrice * (1 - abog / 100);
   } else if (cat === 'br' && br > 0) {
     finalPrice = basePrice * (1 - br / 100);
   }
-  
+
   priceInput.value = Number(finalPrice).toFixed(2);
 }
 
@@ -522,30 +576,53 @@ function newItemRow() {
   let selectedProduct = null;
   nameInput.addEventListener('input', async () => {
     const q = nameInput.value.trim();
-    if (!q) { sugg.style.display = 'none'; sugg.innerHTML=''; selectedProduct = null; tr.dataset.basePrice=''; tr.dataset.category=''; categoryInput.value=''; recomputeTotals(); return; }
+    if (!q) {
+      sugg.style.display = 'none';
+      sugg.innerHTML = '';
+      selectedProduct = null;
+      tr.dataset.basePrice = '';
+      tr.dataset.category = '';
+      categoryInput.value = '';
+      recomputeTotals();
+      return;
+    }
     const list = await window.api.products.search(q);
-    if (!list.length) { sugg.style.display = 'none'; sugg.innerHTML=''; selectedProduct = null; return; }
-    sugg.innerHTML = list.map(p => `<div data-id="${p._id}" data-price="${p.sellingPrice ?? p.price}" data-buy="${p.buyingPrice ?? 0}" data-category="${p.category || ''}">${p.name} <span style="color:#94a3b8">[${p.category || '—'}]</span> — بيع ${currency(p.sellingPrice ?? p.price)} (شراء ${currency(p.buyingPrice ?? 0)})</div>`).join('');
+    if (!list.length) {
+      sugg.style.display = 'none';
+      sugg.innerHTML = '';
+      selectedProduct = null;
+      return;
+    }
+    sugg.innerHTML = list
+      .map(
+        p =>
+          `<div data-id="${p._id}" data-price="${p.sellingPrice ?? p.price}" data-buy="${p.buyingPrice ?? 0}" data-category="${p.category || ''}">${p.name} <span style="color:#94a3b8">[${p.category || '—'}]</span> — بيع ${currency(p.sellingPrice ?? p.price)} (شراء ${currency(p.buyingPrice ?? 0)})</div>`
+      )
+      .join('');
     sugg.style.display = 'block';
   });
 
-  sugg.addEventListener('click', (e) => {
+  sugg.addEventListener('click', e => {
     const d = e.target.closest('div');
     if (!d) return;
-    selectedProduct = { _id: d.getAttribute('data-id'), price: Number(d.getAttribute('data-price')), buy: Number(d.getAttribute('data-buy')), category: d.getAttribute('data-category') };
+    selectedProduct = {
+      _id: d.getAttribute('data-id'),
+      price: Number(d.getAttribute('data-price')),
+      buy: Number(d.getAttribute('data-buy')),
+      category: d.getAttribute('data-category')
+    };
     nameInput.value = d.textContent.split(' [')[0].trim();
     categoryInput.value = selectedProduct.category || '';
     tr.dataset.basePrice = String(selectedProduct.price);
     tr.dataset.category = selectedProduct.category || '';
-    
+
     // Apply discount based on current discount percentages
     applyDiscountToRow(tr);
-    
+
     sugg.style.display = 'none';
     updateRowSubtotal();
     recomputeTotals();
   });
-
 
   function updateRowSubtotal() {
     const qty = Number(qtyInput.value || 0);
@@ -554,9 +631,9 @@ function newItemRow() {
   }
 
   for (const input of [priceInput, qtyInput]) {
-    input.addEventListener('input', () => { 
-      updateRowSubtotal(); 
-      debouncedRecomputeTotals(); 
+    input.addEventListener('input', () => {
+      updateRowSubtotal();
+      debouncedRecomputeTotals();
     });
   }
 
@@ -582,13 +659,13 @@ function newPaymentRow() {
     <td><input type="text" class="pay-note" placeholder="ملاحظة/طريقة" /></td>
     <td><button type="button" class="remove-payment">✕</button></td>
   `;
-  
+
   // Add event listener for payment amount changes
   const amountInput = tr.querySelector('.pay-amount');
   if (amountInput) {
     amountInput.addEventListener('input', recomputeTotals);
   }
-  
+
   return tr;
 }
 
@@ -604,11 +681,13 @@ function updateRowNumbers() {
   }
 }
 
-$('#add-item').addEventListener('click', () => { 
-  $('#items-body').appendChild(newItemRow()); 
+$('#add-item').addEventListener('click', () => {
+  $('#items-body').appendChild(newItemRow());
   updateRowNumbers();
 });
-$('#add-payment').addEventListener('click', () => { $('#payments-body').appendChild(newPaymentRow()); });
+$('#add-payment').addEventListener('click', () => {
+  $('#payments-body').appendChild(newPaymentRow());
+});
 
 // Event Delegation for removing items and payments
 function handleTableClick(e) {
@@ -665,18 +744,36 @@ function recomputeTotals() {
 // Removed global form input listener - it was causing input jamming
 // Individual inputs handle their own total recalculation
 
-$('#invoice-form').addEventListener('submit', async (e) => {
+// Debug: Check if invoice form exists
+const invoiceForm = $('#invoice-form');
+if (!invoiceForm) {
+  console.error('❌ Invoice form not found!');
+} else {
+  console.log('✅ Invoice form found:', invoiceForm);
+}
+
+invoiceForm?.addEventListener('submit', async e => {
   e.preventDefault();
-  const items = $$('#items-body tr').map(tr => tr.getData()).filter(it => it.name && it.price >= 0 && it.qty >= 0);
-  if (!items.length) { 
-    showErrorMessage('أضف بندًا واحدًا على الأقل.'); 
-    return; 
+  console.log('📝 Invoice form submitted!');
+  
+  const items = $$('#items-body tr')
+    .map(tr => tr.getData())
+    .filter(it => it.name && it.price >= 0 && it.qty >= 0);
+  if (!items.length) {
+    showErrorMessage('أضف بندًا واحدًا على الأقل.');
+    return;
   }
-  if (!$('#cust-name').value.trim() || !$('#cust-phone').value.trim()) { 
-    showErrorMessage('اسم العميل ورقم الهاتف مطلوبان.'); 
-    return; 
+  if (!$('#cust-name').value.trim() || !$('#cust-phone').value.trim()) {
+    showErrorMessage('اسم العميل ورقم الهاتف مطلوبان.');
+    return;
   }
-  const payments = $$('#payments-body tr').map(tr => ({ amount: Number(tr.querySelector('.pay-amount').value || 0), date: tr.querySelector('.pay-date').value || new Date().toISOString(), note: tr.querySelector('.pay-note').value })).filter(p => p.amount > 0);
+  const payments = $$('#payments-body tr')
+    .map(tr => ({
+      amount: Number(tr.querySelector('.pay-amount').value || 0),
+      date: tr.querySelector('.pay-date').value || new Date().toISOString(),
+      note: tr.querySelector('.pay-note').value
+    }))
+    .filter(p => p.amount > 0);
 
   const payload = {
     customer: { name: $('#cust-name').value.trim(), phone: $('#cust-phone').value.trim() },
@@ -689,35 +786,34 @@ $('#invoice-form').addEventListener('submit', async (e) => {
   };
 
   const submitButton = e.target.querySelector('button[type="submit"]');
-  
+
   try {
     showLoadingState(submitButton, 'جاري إنشاء الفاتورة...');
     const result = await window.api.invoices.create(payload);
-    
-    if (result && result.error) { 
-      showErrorMessage(result.message || 'فشل إنشاء الفاتورة.'); 
-      return; 
+
+    if (result && result.error) {
+      showErrorMessage(result.message || 'فشل إنشاء الفاتورة.');
+      return;
     }
-    
+
     // Success! Show message and refresh invoice list
     showErrorMessage('تم إنشاء الفاتورة بنجاح!', 'success');
-    
+
     // Clear form
     $('#items-body').innerHTML = '';
     $('#payments-body').innerHTML = '';
     $('#invoice-form').reset();
     recomputeTotals();
-    
+
     // Refresh invoice list to show the new invoice
     await loadInvoices();
-    
+
     // Switch to invoices tab to show the new invoice
     $$('.tab').forEach(b => b.classList.remove('active'));
     $$('.page').forEach(p => p.classList.remove('active'));
     $('#invoices').classList.add('active');
     const invoicesTab = $$('.tab').find(t => t.getAttribute('data-tab') === 'invoices');
     if (invoicesTab) invoicesTab.classList.add('active');
-    
   } catch (error) {
     showErrorMessage('خطأ في إنشاء الفاتورة: ' + (error.message || 'خطأ غير معروف'));
   } finally {
@@ -731,7 +827,11 @@ const custSug = $('#cust-suggestions');
 if (custNameInput) {
   custNameInput.addEventListener('input', async () => {
     const q = custNameInput.value.trim();
-    if (!q) { custSug.style.display = 'none'; custSug.innerHTML=''; return; }
+    if (!q) {
+      custSug.style.display = 'none';
+      custSug.innerHTML = '';
+      return;
+    }
     // Fetch customers and plumbers in parallel, then merge and dedupe
     const [custs, plumbs] = await Promise.all([
       window.api.customers.search(q).catch(() => []),
@@ -739,32 +839,48 @@ if (custNameInput) {
     ]);
     const seen = new Set();
     const merged = [];
-    for (const c of (custs || [])) {
-      const key = (c.phone ? String(c.phone).trim() : '') + '|' + String(c.name || '').trim().toLowerCase();
+    for (const c of custs || []) {
+      const key =
+        (c.phone ? String(c.phone).trim() : '') +
+        '|' +
+        String(c.name || '')
+          .trim()
+          .toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push({ name: c.name, phone: c.phone, kind: 'customer' });
     }
-    for (const p of (plumbs || [])) {
-      const key = (p.phone ? String(p.phone).trim() : '') + '|' + String(p.name || '').trim().toLowerCase();
+    for (const p of plumbs || []) {
+      const key =
+        (p.phone ? String(p.phone).trim() : '') +
+        '|' +
+        String(p.name || '')
+          .trim()
+          .toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push({ name: p.name, phone: p.phone || '', kind: 'plumber' });
     }
-    if (!merged.length) { custSug.style.display='none'; custSug.innerHTML=''; return; }
-    custSug.innerHTML = merged.map(x => {
-      const tag = x.kind === 'plumber' ? '<span style="color:#10b981; margin-right:6px">[سباك]</span>' : '';
-      const phone = x.phone ? ` — ${x.phone}` : '';
-      return `<div data-name="${x.name}" data-phone="${x.phone}">${tag}${x.name}${phone}</div>`;
-    }).join('');
+    if (!merged.length) {
+      custSug.style.display = 'none';
+      custSug.innerHTML = '';
+      return;
+    }
+    custSug.innerHTML = merged
+      .map(x => {
+        const tag = x.kind === 'plumber' ? '<span style="color:#10b981; margin-right:6px">[سباك]</span>' : '';
+        const phone = x.phone ? ` — ${x.phone}` : '';
+        return `<div data-name="${x.name}" data-phone="${x.phone}">${tag}${x.name}${phone}</div>`;
+      })
+      .join('');
     custSug.style.display = 'block';
   });
-  custSug.addEventListener('click', (e) => {
+  custSug.addEventListener('click', e => {
     const d = e.target.closest('div');
     if (!d) return;
     $('#cust-name').value = d.getAttribute('data-name');
     $('#cust-phone').value = d.getAttribute('data-phone');
-    custSug.style.display='none';
+    custSug.style.display = 'none';
   });
 }
 
@@ -772,29 +888,38 @@ if (custNameInput) {
 const liveCustomerSearch = $('#live-customer-search');
 const liveCustomerResults = $('#live-customer-results');
 if (liveCustomerSearch && liveCustomerResults) {
-  const renderCustomerList = (list) => {
+  const renderCustomerList = list => {
     if (!Array.isArray(list) || list.length === 0) {
       liveCustomerResults.innerHTML = '<div style="padding:8px; color:#6b7280">لا نتائج</div>';
       liveCustomerResults.style.display = 'block';
       return;
     }
-    liveCustomerResults.innerHTML = list.map(c => `<div class="opt" data-name="${c.name}" data-phone="${c.phone}" data-id="${normalizeObjId(c._id)}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${c.name}${c.phone?` — ${c.phone}`:''} <button type="button" class="scroll-to-btn" data-target="customer-card-${normalizeObjId(c._id)}" style="float:left; background:#3b82f6; color:white; border:none; padding:2px 6px; border-radius:3px; font-size:10px; margin-left:4px">انتقال</button></div>`).join('');
+    liveCustomerResults.innerHTML = list
+      .map(
+        c =>
+          `<div class="opt" data-name="${c.name}" data-phone="${c.phone}" data-id="${normalizeObjId(c._id)}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${c.name}${c.phone ? ` — ${c.phone}` : ''} <button type="button" class="scroll-to-btn" data-target="customer-card-${normalizeObjId(c._id)}" style="float:left; background:#3b82f6; color:white; border:none; padding:2px 6px; border-radius:3px; font-size:10px; margin-left:4px">انتقال</button></div>`
+      )
+      .join('');
     liveCustomerResults.style.display = 'block';
   };
 
   const doSearchCustomers = async () => {
     const q = liveCustomerSearch.value.trim();
-    if (!q) { liveCustomerResults.style.display='none'; liveCustomerResults.innerHTML=''; return; }
+    if (!q) {
+      liveCustomerResults.style.display = 'none';
+      liveCustomerResults.innerHTML = '';
+      return;
+    }
     try {
       const list = await window.api.customers.search(q);
       renderCustomerList(list || []);
     } catch (e) {
       console.error('customer live search error', e);
-      liveCustomerResults.style.display='none';
+      liveCustomerResults.style.display = 'none';
     }
   };
   liveCustomerSearch.addEventListener('input', doSearchCustomers);
-  liveCustomerResults.addEventListener('click', (e) => {
+  liveCustomerResults.addEventListener('click', e => {
     // Handle scroll-to button click
     if (e.target.classList.contains('scroll-to-btn')) {
       e.preventDefault();
@@ -805,24 +930,26 @@ if (liveCustomerSearch && liveCustomerResults) {
       liveCustomerSearch.value = '';
       return;
     }
-    
+
     const opt = e.target.closest('.opt');
     if (!opt) return;
     liveCustomerSearch.value = opt.getAttribute('data-name');
     liveCustomerResults.style.display = 'none';
   });
-  document.addEventListener('click', (e) => { 
+  document.addEventListener('click', e => {
     // Don't hide if clicking on delete buttons, scroll-to buttons, or other important UI elements
-    if (e.target.classList.contains('remove-payment-btn') || 
-        e.target.classList.contains('edit-payment-btn') || 
-        e.target.classList.contains('btn-delete') ||
-        e.target.classList.contains('scroll-to-btn') ||
-        e.target.closest('.invoice-actions') ||
-        e.target.closest('button')) {
+    if (
+      e.target.classList.contains('remove-payment-btn') ||
+      e.target.classList.contains('edit-payment-btn') ||
+      e.target.classList.contains('btn-delete') ||
+      e.target.classList.contains('scroll-to-btn') ||
+      e.target.closest('.invoice-actions') ||
+      e.target.closest('button')
+    ) {
       return;
     }
     if (!liveCustomerResults.contains(e.target) && e.target !== liveCustomerSearch) {
-      liveCustomerResults.style.display='none'; 
+      liveCustomerResults.style.display = 'none';
     }
   });
 }
@@ -830,29 +957,38 @@ if (liveCustomerSearch && liveCustomerResults) {
 const livePlumberSearch = $('#live-plumber-search');
 const livePlumberResults = $('#live-plumber-results');
 if (livePlumberSearch && livePlumberResults) {
-  const renderPlumberList = (list) => {
+  const renderPlumberList = list => {
     if (!Array.isArray(list) || list.length === 0) {
       livePlumberResults.innerHTML = '<div style="padding:8px; color:#6b7280">لا نتائج</div>';
       livePlumberResults.style.display = 'block';
       return;
     }
-    livePlumberResults.innerHTML = list.map(p => `<div class="opt" data-name="${p.name}" data-phone="${p.phone || ''}" data-id="${normalizeObjId(p._id)}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${p.name}${p.phone?` — ${p.phone}`:''} <button type="button" class="scroll-to-btn" data-target="plumber-card-${normalizeObjId(p._id)}" style="float:left; background:#10b981; color:white; border:none; padding:2px 6px; border-radius:3px; font-size:10px; margin-left:4px">انتقال</button></div>`).join('');
+    livePlumberResults.innerHTML = list
+      .map(
+        p =>
+          `<div class="opt" data-name="${p.name}" data-phone="${p.phone || ''}" data-id="${normalizeObjId(p._id)}" style="padding:8px; cursor:pointer; border-bottom:1px solid #eef">${p.name}${p.phone ? ` — ${p.phone}` : ''} <button type="button" class="scroll-to-btn" data-target="plumber-card-${normalizeObjId(p._id)}" style="float:left; background:#10b981; color:white; border:none; padding:2px 6px; border-radius:3px; font-size:10px; margin-left:4px">انتقال</button></div>`
+      )
+      .join('');
     livePlumberResults.style.display = 'block';
   };
 
   const doSearchPlumbers = async () => {
     const q = livePlumberSearch.value.trim();
-    if (!q) { livePlumberResults.style.display='none'; livePlumberResults.innerHTML=''; return; }
+    if (!q) {
+      livePlumberResults.style.display = 'none';
+      livePlumberResults.innerHTML = '';
+      return;
+    }
     try {
       const list = await window.api.plumbers.search(q);
       renderPlumberList(list || []);
     } catch (e) {
       console.error('plumber live search error', e);
-      livePlumberResults.style.display='none';
+      livePlumberResults.style.display = 'none';
     }
   };
   livePlumberSearch.addEventListener('input', doSearchPlumbers);
-  livePlumberResults.addEventListener('click', (e) => {
+  livePlumberResults.addEventListener('click', e => {
     // Handle scroll-to button click
     if (e.target.classList.contains('scroll-to-btn')) {
       e.preventDefault();
@@ -863,24 +999,26 @@ if (livePlumberSearch && livePlumberResults) {
       livePlumberSearch.value = '';
       return;
     }
-    
+
     const opt = e.target.closest('.opt');
     if (!opt) return;
     livePlumberSearch.value = opt.getAttribute('data-name');
     livePlumberResults.style.display = 'none';
   });
-  document.addEventListener('click', (e) => { 
+  document.addEventListener('click', e => {
     // Don't hide if clicking on delete buttons, scroll-to buttons, or other important UI elements
-    if (e.target.classList.contains('remove-payment-btn') || 
-        e.target.classList.contains('edit-payment-btn') || 
-        e.target.classList.contains('btn-delete') ||
-        e.target.classList.contains('scroll-to-btn') ||
-        e.target.closest('.invoice-actions') ||
-        e.target.closest('button')) {
+    if (
+      e.target.classList.contains('remove-payment-btn') ||
+      e.target.classList.contains('edit-payment-btn') ||
+      e.target.classList.contains('btn-delete') ||
+      e.target.classList.contains('scroll-to-btn') ||
+      e.target.closest('.invoice-actions') ||
+      e.target.closest('button')
+    ) {
       return;
     }
     if (!livePlumberResults.contains(e.target) && e.target !== livePlumberSearch) {
-      livePlumberResults.style.display='none'; 
+      livePlumberResults.style.display = 'none';
     }
   });
 }
@@ -889,45 +1027,49 @@ if (livePlumberSearch && livePlumberResults) {
 async function showInvoiceDetail(id) {
   if (DEBUG_MODE) console.log('=== SHOW INVOICE DETAIL DEBUG ===');
   if (DEBUG_MODE) console.log('showInvoiceDetail called with id:', id, 'type:', typeof id);
-  
+
   // Check if window.api is available
   if (!window.api) {
     console.error('❌ window.api is not available!');
     showErrorMessage('خطأ: واجهة التطبيق غير متاحة');
     return;
   }
-  
+
   try {
     if (DEBUG_MODE) console.log('Calling window.api.invoices.getById...');
     const inv = await window.api.invoices.getById(id);
     if (DEBUG_MODE) console.log('Invoice data received:', inv);
     const panel = $('#invoice-detail');
     if (DEBUG_MODE) console.log('Detail panel element:', panel);
-    
+
     if (!panel) {
       console.error('❌ Detail panel element not found!');
       showErrorMessage('خطأ: لم يتم العثور على لوحة التفاصيل');
       return;
     }
-    
-    if (!inv) { 
+
+    if (!inv) {
       if (DEBUG_MODE) console.log('❌ No invoice found, hiding panel');
-      panel.style.display='none';
+      panel.style.display = 'none';
       showErrorMessage('لم يتم العثور على الفاتورة');
-      return; 
+      return;
     }
-  
+
     // Calculate totals
     const itemsTotal = (inv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
-    const allPayments = (inv.payments || []);
-    const paidTotal = allPayments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
-    
+    const allPayments = inv.payments || [];
+    const paidTotal = allPayments
+      .filter(p => (p.note || '').trim() !== 'مرتجع')
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+
     // Normalize IDs: numeric external id = invoiceNumber; internal ObjectId kept for backend
     const invoiceNumberExt = inv.invoiceNumber;
     // Normalize ID and format dates (Gregorian)
     let idStr = inv._id;
     if (typeof idStr === 'object' && idStr?.buffer) {
-      idStr = Array.from(idStr.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+      idStr = Array.from(idStr.buffer)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
     } else if (typeof idStr === 'object' && idStr?.toString) {
       idStr = idStr.toString();
     } else {
@@ -935,12 +1077,16 @@ async function showInvoiceDetail(id) {
     }
     const createdDate = formatGregorian(inv.createdAt, false);
     const updatedDate = formatGregorian(inv.updatedAt, false);
-    
+
     // Items table
-    const itemsRows = (inv.items || []).map((it, idx) => {
-      const itemTotal = (it.qty || 0) * (it.discountedPrice ?? it.price);
-      const discountInfo = it.discountedPrice != null ? ` <span style="color:#16a34a">(-${(100 - (it.discountedPrice / it.price * 100)).toFixed(0)}%)</span>` : '';
-      return `<tr>
+    const itemsRows = (inv.items || [])
+      .map((it, idx) => {
+        const itemTotal = (it.qty || 0) * (it.discountedPrice ?? it.price);
+        const discountInfo =
+          it.discountedPrice != null
+            ? ` <span style="color:#16a34a">(-${(100 - (it.discountedPrice / it.price) * 100).toFixed(0)}%)</span>`
+            : '';
+        return `<tr>
         <td>${it.product?.name || it.productName || ''}</td>
         <td>${it.category || ''}</td>
         <td>${it.qty}</td>
@@ -948,13 +1094,15 @@ async function showInvoiceDetail(id) {
         <td>${itemTotal.toFixed(2)}</td>
         <td style="text-align:center"><input type="checkbox" class="delivered-toggle" data-index="${idx}" ${it.delivered ? 'checked' : ''} disabled /></td>
       </tr>`;
-    }).join('');
-    
+      })
+      .join('');
+
     // Payments table with edit/delete functionality
-    const paymentsRows = (inv.payments || []).map((p, idx) => {
-      const paymentDate = formatGregorian(p.date, false);
-      const paymentId = p._id || `temp-${idx}`;
-      return `<tr data-payment-index="${idx}" data-payment-id="${paymentId}">
+    const paymentsRows = (inv.payments || [])
+      .map((p, idx) => {
+        const paymentDate = formatGregorian(p.date, false);
+        const paymentId = p._id || `temp-${idx}`;
+        return `<tr data-payment-index="${idx}" data-payment-id="${paymentId}">
         <td class="payment-date-cell">${paymentDate}</td>
         <td class="payment-note-cell">${p.note || ''}</td>
         <td class="payment-amount-cell">${Number(p.amount).toFixed(2)}</td>
@@ -963,30 +1111,38 @@ async function showInvoiceDetail(id) {
           <button type="button" class="remove-payment-btn" data-payment-index="${idx}">حذف</button>
         </td>
       </tr>`;
-    }).join('');
+      })
+      .join('');
 
     // Return section (if any)
     const hasReturn = !!inv.returnInvoice;
-    const returnRows = hasReturn ? (inv.returnInvoice.items || []).map((ri, idx) => {
-      const t = Number(ri.qty || 0) * Number(ri.price || 0);
-      return `<tr>
+    const returnRows = hasReturn
+      ? (inv.returnInvoice.items || [])
+          .map((ri, idx) => {
+            const t = Number(ri.qty || 0) * Number(ri.price || 0);
+            return `<tr>
         <td>${ri.productName || ri.product || ''}</td>
         <td>${ri.qty || 0}</td>
         <td>${Number(ri.price || 0).toFixed(2)}</td>
         <td>${t.toFixed(2)}</td>
       </tr>`;
-    }).join('') : '';
-    const returnTotal = hasReturn ? (inv.returnInvoice.items || []).reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0) : 0;
+          })
+          .join('')
+      : '';
+    const returnTotal = hasReturn
+      ? (inv.returnInvoice.items || []).reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0)
+      : 0;
     const remaining = Number((itemsTotal - (paidTotal + returnTotal)).toFixed(2));
-    
+
     // Discount info
-    const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
-      ? `<div style="margin:8px 0; padding:8px; background:#f0f9ff; border-radius:4px;">
+    const discountInfo =
+      inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0
+        ? `<div style="margin:8px 0; padding:8px; background:#f0f9ff; border-radius:4px;">
            <strong>الخصومات:</strong> ابوغالي ${inv.discountAbogaliPercent}% | BR ${inv.discountBrPercent}%
          </div>`
-      : '';
-    
-    const shortId = (idStr && typeof idStr === 'string') ? idStr.slice(-6) : '';
+        : '';
+
+    const shortId = idStr && typeof idStr === 'string' ? idStr.slice(-6) : '';
     panel.innerHTML = `
       <h3>تفاصيل الفاتورة #${invoiceNumberExt || shortId || 'غير محدد'}</h3>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px;">
@@ -1014,7 +1170,9 @@ async function showInvoiceDetail(id) {
       
       
       
-      ${hasReturn ? `
+      ${
+        hasReturn
+          ? `
       <div style="margin-top:16px"></div>
       <h4>المرتجع</h4>
       <div class="muted">التاريخ: ${formatGregorian(inv.returnInvoice.createdAt, true)}</div>
@@ -1023,7 +1181,9 @@ async function showInvoiceDetail(id) {
         <tbody>${returnRows}</tbody>
       </table>
       <div style="margin-top:8px"><strong>إجمالي المرتجع:</strong> ${returnTotal.toFixed(2)}</div>
-      ` : ''}
+      `
+          : ''
+      }
 
       <h4>المدفوعات</h4>
       <table class="items-table inv-payments" style="margin-top:8px">
@@ -1071,77 +1231,91 @@ async function showInvoiceDetail(id) {
     
     <div id="return-form" style="display:none; margin-top:16px"></div>
   `;
-  
-  panel.style.display = 'block';
-  // Ensure the invoice detail is shown at the top of the viewport
-  try {
-    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // Fallback to window scroll in case the container handles scrolling
-    setTimeout(() => { try { window.scrollTo({ top: panel.offsetTop || 0, behavior: 'smooth' }); } catch (_) {} }, 0);
-  } catch (_) {}
-  
-  // Add event listeners
-  // Delivered checkboxes are read-only in view mode
 
-  $('#btn-edit-invoice').addEventListener('click', async () => {
-    await showEditInvoiceForm(invoiceNumberExt ?? idStr);
-  });
-  $('#btn-make-return').addEventListener('click', () => buildReturnForm(inv));
-  $('#btn-print-invoice').addEventListener('click', async () => {
-    await window.api.print.invoice(invoiceNumberExt ?? idStr, { fontSize: getCurrentFontSize() });
-  });
-  $('#btn-delete-invoice').addEventListener('click', async () => {
-    const externalId = invoiceNumberExt ?? idStr;
-    const ok = await showConfirmation({ title: 'حذف فاتورة', message: 'هل أنت متأكد من حذف هذه الفاتورة؟ هذا الإجراء لا يمكن التراجع عنه.' });
-    if (!ok) return;
+    panel.style.display = 'block';
+    // Ensure the invoice detail is shown at the top of the viewport
     try {
-      const res = await window.api.invoices.delete(externalId);
-      if (res && res.error) { showErrorMessage('فشل حذف الفاتورة: ' + (res.message || '')); return; }
-      // Refresh list and clear detail panel
-      await loadInvoices();
-      const panel = $('#invoice-detail');
-      if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
-      showErrorMessage('تم حذف الفاتورة بنجاح', 'success');
-    } catch (e) {
-      showErrorMessage('خطأ في حذف الفاتورة: ' + (e.message || ''));
-    }
-  });
-  $('#add-payment-btn').addEventListener('click', async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Normalize Arabic-Indic digits and separators to parseable number
-    const rawAmt = ($('#new-payment-amount').value || '').trim();
-    const arabicDigits = '۰۱۲۳۴۵۶۷۸۹';
-    const normalizedDigits = rawAmt.replace(/[۰-۹]/g, d => String(arabicDigits.indexOf(d)))
-                                   .replace(/[٬,]/g, '') // remove thousand separators
-                                   .replace(/[٫]/g, '.') // decimal separator to dot
-                                   .replace(/\s+/g, '');
-    const amount = Number(normalizedDigits || 0);
-    const date = $('#new-payment-date').value || new Date().toISOString().split('T')[0];
-    const note = $('#new-payment-note').value || '';
-    
-    if (amount <= 0) {
-      showErrorMessage('يرجى إدخال مبلغ صحيح');
-      $('#new-payment-amount').focus();
-      return;
-    }
-    
-    try {
-      const result = await window.api.invoices.addPayment(invoiceNumberExt ?? idStr, { amount, date, note });
-      
-      // Add the new payment row to the existing table instead of full refresh
-      const paymentsTable = document.querySelector('.inv-payments tbody');
-      if (paymentsTable && result.payments) {
-        const newPayment = result.payments[result.payments.length - 1];
-        const paymentIndex = result.payments.length - 1;
-        const paymentDate = formatGregorian(newPayment.date, false);
-        const paymentId = newPayment._id || `temp-${paymentIndex}`;
-        
-        const newRow = document.createElement('tr');
-        newRow.setAttribute('data-payment-index', paymentIndex);
-        newRow.setAttribute('data-payment-id', paymentId);
-        newRow.innerHTML = `
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Fallback to window scroll in case the container handles scrolling
+      setTimeout(() => {
+        try {
+          window.scrollTo({ top: panel.offsetTop || 0, behavior: 'smooth' });
+        } catch (_) {}
+      }, 0);
+    } catch (_) {}
+
+    // Add event listeners
+    // Delivered checkboxes are read-only in view mode
+
+    $('#btn-edit-invoice').addEventListener('click', async () => {
+      await showEditInvoiceForm(invoiceNumberExt ?? idStr);
+    });
+    $('#btn-make-return').addEventListener('click', () => buildReturnForm(inv));
+    $('#btn-print-invoice').addEventListener('click', async () => {
+      await window.api.print.invoice(invoiceNumberExt ?? idStr, { fontSize: getCurrentFontSize() });
+    });
+    $('#btn-delete-invoice').addEventListener('click', async () => {
+      const externalId = invoiceNumberExt ?? idStr;
+      const ok = await showConfirmation({
+        title: 'حذف فاتورة',
+        message: 'هل أنت متأكد من حذف هذه الفاتورة؟ هذا الإجراء لا يمكن التراجع عنه.'
+      });
+      if (!ok) return;
+      try {
+        const res = await window.api.invoices.delete(externalId);
+        if (res && res.error) {
+          showErrorMessage('فشل حذف الفاتورة: ' + (res.message || ''));
+          return;
+        }
+        // Refresh list and clear detail panel
+        await loadInvoices();
+        const panel = $('#invoice-detail');
+        if (panel) {
+          panel.style.display = 'none';
+          panel.innerHTML = '';
+        }
+        showErrorMessage('تم حذف الفاتورة بنجاح', 'success');
+      } catch (e) {
+        showErrorMessage('خطأ في حذف الفاتورة: ' + (e.message || ''));
+      }
+    });
+    $('#add-payment-btn').addEventListener('click', async e => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Normalize Arabic-Indic digits and separators to parseable number
+      const rawAmt = ($('#new-payment-amount').value || '').trim();
+      const arabicDigits = '۰۱۲۳۴۵۶۷۸۹';
+      const normalizedDigits = rawAmt
+        .replace(/[۰-۹]/g, d => String(arabicDigits.indexOf(d)))
+        .replace(/[٬,]/g, '') // remove thousand separators
+        .replace(/[٫]/g, '.') // decimal separator to dot
+        .replace(/\s+/g, '');
+      const amount = Number(normalizedDigits || 0);
+      const date = $('#new-payment-date').value || new Date().toISOString().split('T')[0];
+      const note = $('#new-payment-note').value || '';
+
+      if (amount <= 0) {
+        showErrorMessage('يرجى إدخال مبلغ صحيح');
+        $('#new-payment-amount').focus();
+        return;
+      }
+
+      try {
+        const result = await window.api.invoices.addPayment(invoiceNumberExt ?? idStr, { amount, date, note });
+
+        // Add the new payment row to the existing table instead of full refresh
+        const paymentsTable = safeQuerySelector(document, '.inv-payments tbody');
+        if (paymentsTable && result.payments) {
+          const newPayment = result.payments[result.payments.length - 1];
+          const paymentIndex = result.payments.length - 1;
+          const paymentDate = formatGregorian(newPayment.date, false);
+          const paymentId = newPayment._id || `temp-${paymentIndex}`;
+
+          const newRow = document.createElement('tr');
+          newRow.setAttribute('data-payment-index', paymentIndex);
+          newRow.setAttribute('data-payment-id', paymentId);
+          newRow.innerHTML = `
           <td class="payment-date-cell">${paymentDate}</td>
           <td class="payment-note-cell">${newPayment.note || ''}</td>
           <td class="payment-amount-cell">${Number(newPayment.amount).toFixed(2)}</td>
@@ -1150,226 +1324,32 @@ async function showInvoiceDetail(id) {
             <button type="button" class="remove-payment-btn" data-payment-index="${paymentIndex}">حذف</button>
           </td>
         `;
-        paymentsTable.appendChild(newRow);
-        
-        // Update local invoice data
-        inv.payments = result.payments;
-        
-        // Update totals display
-        const itemsTotal = (inv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
-        const paidTotal = result.payments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
-        const remaining = itemsTotal - paidTotal;
-        
-        // Find and update totals displays using more reliable selectors
-        const totalsGrid = document.querySelector('div[style*="grid-template-columns: repeat(4"]');
-        if (totalsGrid) {
-          const totalBoxes = totalsGrid.querySelectorAll('div[style*="background:#ffffff"]');
-          totalBoxes.forEach(box => {
-            const label = box.querySelector('div[style*="font-size:12px"]');
-            const value = box.querySelector('div[style*="font-size:20px"]');
-            if (label && value) {
-              if (label.textContent.includes('إجمالي المدفوع')) {
-                value.textContent = paidTotal.toFixed(2);
-              } else if (label.textContent.includes('المتبقي')) {
-                value.textContent = remaining.toFixed(2);
-                value.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
-              }
-            }
-          });
-        }
-      }
-      
-      // Clear the form and keep focus on amount input
-      const amountInput = $('#new-payment-amount');
-      const dateInput = $('#new-payment-date');
-      const noteInput = $('#new-payment-note');
-      
-      if (amountInput) amountInput.value = '';
-      if (dateInput) dateInput.value = '';
-      if (noteInput) noteInput.value = '';
-      
-      // Keep focus on amount input for continuous entry
-      if (amountInput) {
-        amountInput.focus();
-      }
-      
-    } catch (error) {
-      showErrorMessage('خطأ في إضافة الدفعة: ' + error.message);
-    }
-  });
-  
-  // Handle payment and return item edit/delete
-  panel.addEventListener('click', async (e) => {
-    const target = e.target;
-    const invoiceId = invoiceNumberExt ?? idStr;
-    
-    // Only handle our specific button clicks
-    if (!target.classList.contains('edit-payment-btn') && 
-        !target.classList.contains('save-payment-btn') && 
-        !target.classList.contains('cancel-payment-edit-btn') && 
-        !target.classList.contains('remove-payment-btn')) {
-      return; // Let other events bubble normally
-    }
-    
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Payment edit functionality
-    if (target.classList.contains('edit-payment-btn')) {
-      if (DEBUG_MODE) console.log('Edit payment button clicked');
-      const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
-      const payment = inv.payments[paymentIndex];
-      if (!payment) {
-        if (DEBUG_MODE) console.log('Payment not found at index:', paymentIndex);
-        return;
-      }
-      
-      const row = target.closest('tr');
-      const dateCell = row.querySelector('.payment-date-cell');
-      const noteCell = row.querySelector('.payment-note-cell');
-      const amountCell = row.querySelector('.payment-amount-cell');
-      const actionsCell = row.querySelector('td:last-child');
-      
-      // Convert to edit mode
-      const originalDate = new Date(payment.date).toISOString().split('T')[0];
-      row.innerHTML = `
-        <td><input type="date" class="edit-payment-date" value="${originalDate}" style="width:100%" /></td>
-        <td><input type="text" class="edit-payment-note" value="${payment.note || ''}" style="width:100%" /></td>
-        <td><input type="number" class="edit-payment-amount" value="${payment.amount}" step="0.01" min="0" style="width:100%" /></td>
-        <td>
-          <button type="button" class="save-payment-btn" data-payment-index="${paymentIndex}">حفظ</button>
-          <button type="button" class="cancel-payment-edit-btn" data-payment-index="${paymentIndex}">إلغاء</button>
-        </td>
-      `;
-    }
-    
-    // Payment save functionality
-    else if (target.classList.contains('save-payment-btn')) {
-      const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
-      const row = target.closest('tr');
-      
-      const newDate = row.querySelector('.edit-payment-date').value;
-      const newNote = row.querySelector('.edit-payment-note').value;
-      const newAmount = Number(row.querySelector('.edit-payment-amount').value);
-      
-      if (newAmount <= 0) {
-        showErrorMessage('يرجى إدخال مبلغ صحيح');
-        return;
-      }
-      
-      try {
-        // Update the payment in the invoice data
-        const updatedPayments = [...inv.payments];
-        updatedPayments[paymentIndex] = {
-          ...updatedPayments[paymentIndex],
-          date: newDate,
-          note: newNote,
-          amount: newAmount
-        };
-        
-        // Call API to update invoice with new payments
-        const result = await window.api.invoices.update(invoiceId, { payments: updatedPayments });
-        
-        // Update the row back to view mode with new values
-        const paymentDate = formatGregorian(newDate, false);
-        row.innerHTML = `
-          <td class="payment-date-cell">${paymentDate}</td>
-          <td class="payment-note-cell">${newNote}</td>
-          <td class="payment-amount-cell">${newAmount.toFixed(2)}</td>
-          <td>
-            <button type="button" class="edit-payment-btn" data-payment-index="${paymentIndex}">تعديل</button>
-            <button type="button" class="remove-payment-btn" data-payment-index="${paymentIndex}">حذف</button>
-          </td>
-        `;
-        
-        // Update local invoice data
-        inv.payments = updatedPayments;
-        
-        // Update totals display
-        const itemsTotal = (inv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
-        const paidTotal = updatedPayments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
-        const remaining = itemsTotal - paidTotal;
-        
-        // Find and update totals displays using more reliable selectors
-        const totalsGrid = document.querySelector('div[style*="grid-template-columns: repeat(4"]');
-        if (totalsGrid) {
-          const totalBoxes = totalsGrid.querySelectorAll('div[style*="background:#ffffff"]');
-          totalBoxes.forEach(box => {
-            const label = box.querySelector('div[style*="font-size:12px"]');
-            const value = box.querySelector('div[style*="font-size:20px"]');
-            if (label && value) {
-              if (label.textContent.includes('إجمالي المدفوع')) {
-                value.textContent = paidTotal.toFixed(2);
-              } else if (label.textContent.includes('المتبقي')) {
-                value.textContent = remaining.toFixed(2);
-                value.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
-              }
-            }
-          });
-        }
-        
-        showErrorMessage('تم تحديث الدفعة بنجاح', 'success');
-      } catch (error) {
-        showErrorMessage('خطأ في تحديث الدفعة: ' + error.message);
-      }
-    }
-    
-    // Payment cancel edit functionality
-    else if (target.classList.contains('cancel-payment-edit-btn')) {
-      // Restore the row to view mode without API call
-      const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
-      const payment = inv.payments[paymentIndex];
-      
-      if (payment) {
-        const row = target.closest('tr');
-        const paymentDate = formatGregorian(payment.date, false);
-        row.innerHTML = `
-          <td class="payment-date-cell">${paymentDate}</td>
-          <td class="payment-note-cell">${payment.note || ''}</td>
-          <td class="payment-amount-cell">${Number(payment.amount).toFixed(2)}</td>
-          <td>
-            <button type="button" class="edit-payment-btn" data-payment-index="${paymentIndex}">تعديل</button>
-            <button type="button" class="remove-payment-btn" data-payment-index="${paymentIndex}">حذف</button>
-          </td>
-        `;
-      }
-    }
-    
-    // Payment removal functionality
-    else if (target.classList.contains('remove-payment-btn')) {
-      const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
-      const payment = inv.payments[paymentIndex];
-      
-      const ok = await showConfirmation({ title: 'حذف دفعة', message: `هل أنت متأكد من حذف هذه الدفعة؟\nالمبلغ: ${payment.amount}\nالملاحظة: ${payment.note || 'لا توجد'}` });
-      if (!ok) return;
-      
-      try {
-        // Remove the payment from the invoice data
-        const updatedPayments = inv.payments.filter((_, idx) => idx !== paymentIndex);
-        
-        // Call API to update invoice with removed payment
-        window.api.invoices.update(invoiceId, { payments: updatedPayments }).then(() => {
-          // Remove the payment row from DOM without full refresh
-          const paymentRow = target.closest('tr');
-          if (paymentRow) {
-            paymentRow.remove();
-          }
-          
-          // Update the local invoice data
-          inv.payments = updatedPayments;
-          
-          // Update totals display after payment deletion
-          const itemsTotal = (inv.items || []).reduce((sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price), 0);
-          const paidTotal = updatedPayments.filter(p => (p.note || '').trim() !== 'مرتجع').reduce((sum, p) => sum + (p.amount || 0), 0);
-          const remaining = itemsTotal - paidTotal;
-          
+          paymentsTable.appendChild(newRow);
+
+          // Update local invoice data
+          inv.payments = result.payments;
+
+          // Update totals display
+          const itemsTotal = (inv.items || []).reduce(
+            (sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price),
+            0
+          );
+          const paidTotal = result.payments
+            .filter(p => (p.note || '').trim() !== 'مرتجع')
+            .reduce((sum, p) => sum + (p.amount || 0), 0);
+          // Calculate return total
+          const returnTotal = result.payments
+            .filter(p => (p.note || '').trim() === 'مرتجع')
+            .reduce((sum, p) => sum + (p.amount || 0), 0);
+          const remaining = itemsTotal - paidTotal - returnTotal;
+
           // Find and update totals displays using more reliable selectors
-          const totalsGrid = document.querySelector('div[style*="grid-template-columns: repeat(4"]');
+          const totalsGrid = safeQuerySelector(document, 'div[style*="grid-template-columns: repeat(4"]');
           if (totalsGrid) {
-            const totalBoxes = totalsGrid.querySelectorAll('div[style*="background:#ffffff"]');
+            const totalBoxes = safeQuerySelectorAll(totalsGrid, 'div[style*="background:#ffffff"]');
             totalBoxes.forEach(box => {
-              const label = box.querySelector('div[style*="font-size:12px"]');
-              const value = box.querySelector('div[style*="font-size:20px"]');
+              const label = safeQuerySelector(box, 'div[style*="font-size:12px"]');
+              const value = safeQuerySelector(box, 'div[style*="font-size:20px"]');
               if (label && value) {
                 if (label.textContent.includes('إجمالي المدفوع')) {
                   value.textContent = paidTotal.toFixed(2);
@@ -1380,17 +1360,244 @@ async function showInvoiceDetail(id) {
               }
             });
           }
-          
-          showErrorMessage('تم حذف الدفعة بنجاح', 'success');
-        }).catch(error => {
-          showErrorMessage('خطأ في حذف الدفعة: ' + error.message);
-        });
+        }
+
+        // Clear the form and keep focus on amount input
+        const amountInput = $('#new-payment-amount');
+        const dateInput = $('#new-payment-date');
+        const noteInput = $('#new-payment-note');
+
+        if (amountInput) amountInput.value = '';
+        if (dateInput) dateInput.value = '';
+        if (noteInput) noteInput.value = '';
+
+        // Keep focus on amount input for continuous entry
+        if (amountInput) {
+          amountInput.focus();
+        }
       } catch (error) {
-        showErrorMessage('خطأ في حذف الدفعة: ' + error.message);
+        showErrorMessage('خطأ في إضافة الدفعة: ' + error.message);
       }
-    }
-  });
-  
+    });
+
+    // Handle payment and return item edit/delete
+    panel.addEventListener('click', async e => {
+      const target = e.target;
+      const invoiceId = invoiceNumberExt ?? idStr;
+
+      // Only handle our specific button clicks
+      if (
+        !target.classList.contains('edit-payment-btn') &&
+        !target.classList.contains('save-payment-btn') &&
+        !target.classList.contains('cancel-payment-edit-btn') &&
+        !target.classList.contains('remove-payment-btn')
+      ) {
+        return; // Let other events bubble normally
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Payment edit functionality
+      if (target.classList.contains('edit-payment-btn')) {
+        if (DEBUG_MODE) console.log('Edit payment button clicked');
+        const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
+        const payment = inv.payments[paymentIndex];
+        if (!payment) {
+          if (DEBUG_MODE) console.log('Payment not found at index:', paymentIndex);
+          return;
+        }
+
+        const row = target.closest('tr');
+        const dateCell = row.querySelector('.payment-date-cell');
+        const noteCell = row.querySelector('.payment-note-cell');
+        const amountCell = row.querySelector('.payment-amount-cell');
+        const actionsCell = row.querySelector('td:last-child');
+
+        // Convert to edit mode
+        const originalDate = new Date(payment.date).toISOString().split('T')[0];
+        row.innerHTML = `
+        <td><input type="date" class="edit-payment-date" value="${originalDate}" style="width:100%" /></td>
+        <td><input type="text" class="edit-payment-note" value="${payment.note || ''}" style="width:100%" /></td>
+        <td><input type="number" class="edit-payment-amount" value="${payment.amount}" step="0.01" min="0" style="width:100%" /></td>
+        <td>
+          <button type="button" class="save-payment-btn" data-payment-index="${paymentIndex}">حفظ</button>
+          <button type="button" class="cancel-payment-edit-btn" data-payment-index="${paymentIndex}">إلغاء</button>
+        </td>
+      `;
+      }
+
+      // Payment save functionality
+      else if (target.classList.contains('save-payment-btn')) {
+        const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
+        const row = target.closest('tr');
+
+        const newDate = row.querySelector('.edit-payment-date').value;
+        const newNote = row.querySelector('.edit-payment-note').value;
+        const newAmount = Number(row.querySelector('.edit-payment-amount').value);
+
+        if (newAmount <= 0) {
+          showErrorMessage('يرجى إدخال مبلغ صحيح');
+          return;
+        }
+
+        try {
+          // Update the payment in the invoice data
+          const updatedPayments = [...inv.payments];
+          updatedPayments[paymentIndex] = {
+            ...updatedPayments[paymentIndex],
+            date: newDate,
+            note: newNote,
+            amount: newAmount
+          };
+
+          // Call API to update invoice with new payments
+          const result = await window.api.invoices.update(invoiceId, { payments: updatedPayments });
+
+          // Update the row back to view mode with new values
+          const paymentDate = formatGregorian(newDate, false);
+          row.innerHTML = `
+          <td class="payment-date-cell">${paymentDate}</td>
+          <td class="payment-note-cell">${newNote}</td>
+          <td class="payment-amount-cell">${newAmount.toFixed(2)}</td>
+          <td>
+            <button type="button" class="edit-payment-btn" data-payment-index="${paymentIndex}">تعديل</button>
+            <button type="button" class="remove-payment-btn" data-payment-index="${paymentIndex}">حذف</button>
+          </td>
+        `;
+
+          // Update local invoice data
+          inv.payments = updatedPayments;
+
+          // Update totals display
+          const itemsTotal = (inv.items || []).reduce(
+            (sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price),
+            0
+          );
+          const paidTotal = updatedPayments
+            .filter(p => (p.note || '').trim() !== 'مرتجع')
+            .reduce((sum, p) => sum + (p.amount || 0), 0);
+          // Calculate return total
+          const returnTotal = updatedPayments
+            .filter(p => (p.note || '').trim() === 'مرتجع')
+            .reduce((sum, p) => sum + (p.amount || 0), 0);
+          const remaining = itemsTotal - paidTotal - returnTotal;
+
+          // Find and update totals displays using more reliable selectors
+          const totalsGrid = safeQuerySelector(document, 'div[style*="grid-template-columns: repeat(4"]');
+          if (totalsGrid) {
+            const totalBoxes = safeQuerySelectorAll(totalsGrid, 'div[style*="background:#ffffff"]');
+            totalBoxes.forEach(box => {
+              const label = safeQuerySelector(box, 'div[style*="font-size:12px"]');
+              const value = safeQuerySelector(box, 'div[style*="font-size:20px"]');
+              if (label && value) {
+                if (label.textContent.includes('إجمالي المدفوع')) {
+                  value.textContent = paidTotal.toFixed(2);
+                } else if (label.textContent.includes('المتبقي')) {
+                  value.textContent = remaining.toFixed(2);
+                  value.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
+                }
+              }
+            });
+          }
+
+          showErrorMessage('تم تحديث الدفعة بنجاح', 'success');
+        } catch (error) {
+          showErrorMessage('خطأ في تحديث الدفعة: ' + error.message);
+        }
+      }
+
+      // Payment cancel edit functionality
+      else if (target.classList.contains('cancel-payment-edit-btn')) {
+        // Restore the row to view mode without API call
+        const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
+        const payment = inv.payments[paymentIndex];
+
+        if (payment) {
+          const row = target.closest('tr');
+          const paymentDate = formatGregorian(payment.date, false);
+          row.innerHTML = `
+          <td class="payment-date-cell">${paymentDate}</td>
+          <td class="payment-note-cell">${payment.note || ''}</td>
+          <td class="payment-amount-cell">${Number(payment.amount).toFixed(2)}</td>
+          <td>
+            <button type="button" class="edit-payment-btn" data-payment-index="${paymentIndex}">تعديل</button>
+            <button type="button" class="remove-payment-btn" data-payment-index="${paymentIndex}">حذف</button>
+          </td>
+        `;
+        }
+      }
+
+      // Payment removal functionality
+      else if (target.classList.contains('remove-payment-btn')) {
+        const paymentIndex = parseInt(target.getAttribute('data-payment-index'));
+        const payment = inv.payments[paymentIndex];
+
+        const ok = await showConfirmation({
+          title: 'حذف دفعة',
+          message: `هل أنت متأكد من حذف هذه الدفعة؟\nالمبلغ: ${payment.amount}\nالملاحظة: ${payment.note || 'لا توجد'}`
+        });
+        if (!ok) return;
+
+        try {
+          // Remove the payment from the invoice data
+          const updatedPayments = inv.payments.filter((_, idx) => idx !== paymentIndex);
+
+          // Call API to update invoice with removed payment
+          window.api.invoices
+            .update(invoiceId, { payments: updatedPayments })
+            .then(() => {
+              // Remove the payment row from DOM without full refresh
+              const paymentRow = target.closest('tr');
+              if (paymentRow) {
+                paymentRow.remove();
+              }
+
+              // Update the local invoice data
+              inv.payments = updatedPayments;
+
+              // Update totals display after payment deletion
+              const itemsTotal = (inv.items || []).reduce(
+                (sum, it) => sum + (it.qty || 0) * (it.discountedPrice ?? it.price),
+                0
+              );
+              const paidTotal = updatedPayments
+                .filter(p => (p.note || '').trim() !== 'مرتجع')
+                .reduce((sum, p) => sum + (p.amount || 0), 0);
+              // Calculate return total
+              const returnTotal = updatedPayments
+                .filter(p => (p.note || '').trim() === 'مرتجع')
+                .reduce((sum, p) => sum + (p.amount || 0), 0);
+              const remaining = itemsTotal - paidTotal - returnTotal;
+
+              // Find and update totals displays using more reliable selectors
+              const totalsGrid = document.querySelector('div[style*="grid-template-columns: repeat(4"]');
+              if (totalsGrid) {
+                const totalBoxes = safeQuerySelectorAll(totalsGrid, 'div[style*="background:#ffffff"]');
+                totalBoxes.forEach(box => {
+                  const label = box.querySelector('div[style*="font-size:12px"]');
+                  const value = box.querySelector('div[style*="font-size:20px"]');
+                  if (label && value) {
+                    if (label.textContent.includes('إجمالي المدفوع')) {
+                      value.textContent = paidTotal.toFixed(2);
+                    } else if (label.textContent.includes('المتبقي')) {
+                      value.textContent = remaining.toFixed(2);
+                      value.style.color = remaining > 0 ? '#dc2626' : '#16a34a';
+                    }
+                  }
+                });
+              }
+
+              showErrorMessage('تم حذف الدفعة بنجاح', 'success');
+            })
+            .catch(error => {
+              showErrorMessage('خطأ في حذف الدفعة: ' + error.message);
+            });
+        } catch (error) {
+          showErrorMessage('خطأ في حذف الدفعة: ' + error.message);
+        }
+      }
+    });
   } catch (error) {
     console.error('❌ Error showing invoice detail:', error);
     const panel = $('#invoice-detail');
@@ -1417,16 +1624,16 @@ function buildReturnForm(inv) {
     </div>
   `;
   mount.style.display = 'block';
-  
+
   // Auto-scroll to the return form
   setTimeout(() => {
     try {
       mount.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       // Fallback scroll
-      window.scrollTo({ 
-        top: mount.offsetTop - 100, 
-        behavior: 'smooth' 
+      window.scrollTo({
+        top: mount.offsetTop - 100,
+        behavior: 'smooth'
       });
     }
   }, 100);
@@ -1471,18 +1678,39 @@ function buildReturnForm(inv) {
     function updateSuggestionsAndMaybeAutofill() {
       const q = nameInput.value.trim().toLowerCase();
       const src = (inv.items || []).map(it => ({
-        id: (it.product && it.product._id) ? it.product._id : (it.product || it.productId || it._id),
-        name: (it.product && it.product.name) ? it.product.name : (it.productName || ''),
-        price: (it.discountedPrice ?? it.price) // effective (after discount)
+        id: it.product && it.product._id ? it.product._id : it.product || it.productId || it._id,
+        name: it.product && it.product.name ? it.product.name : it.productName || '',
+        price: it.discountedPrice ?? it.price // effective (after discount)
       }));
-      const list = q ? src.filter(p => String(p.name || '').toLowerCase().includes(q)) : src;
-      if (!list.length) { sugg.style.display='none'; sugg.innerHTML=''; selected=null; return; }
-      sugg.innerHTML = list.map(p => `<div data-id="${p.id}" data-name="${p.name}" data-price="${p.price}">${p.name} — ${currency(p.price)}</div>`).join('');
+      const list = q
+        ? src.filter(p =>
+            String(p.name || '')
+              .toLowerCase()
+              .includes(q)
+          )
+        : src;
+      if (!list.length) {
+        sugg.style.display = 'none';
+        sugg.innerHTML = '';
+        selected = null;
+        return;
+      }
+      sugg.innerHTML = list
+        .map(
+          p =>
+            `<div data-id="${p.id}" data-name="${p.name}" data-price="${p.price}">${p.name} — ${currency(p.price)}</div>`
+        )
+        .join('');
       sugg.style.display = 'block';
 
       // If the typed name exactly matches one item, auto-select it and fill discounted price
       if (q) {
-        const exact = src.find(p => String(p.name || '').trim().toLowerCase() === q);
+        const exact = src.find(
+          p =>
+            String(p.name || '')
+              .trim()
+              .toLowerCase() === q
+        );
         if (exact) {
           applySelection(exact);
           return;
@@ -1498,19 +1726,23 @@ function buildReturnForm(inv) {
 
     nameInput.addEventListener('input', updateSuggestionsAndMaybeAutofill);
     nameInput.addEventListener('blur', updateSuggestionsAndMaybeAutofill);
-    nameInput.addEventListener('keydown', (e) => {
+    nameInput.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
         updateSuggestionsAndMaybeAutofill();
       }
     });
-    sugg.addEventListener('click', (e) => {
+    sugg.addEventListener('click', e => {
       const d = e.target.closest('div');
       if (!d) return;
-      applySelection({ id: d.getAttribute('data-id'), name: d.getAttribute('data-name'), price: Number(d.getAttribute('data-price')) });
+      applySelection({
+        id: d.getAttribute('data-id'),
+        name: d.getAttribute('data-name'),
+        price: Number(d.getAttribute('data-price'))
+      });
     });
     const retRemoveBtn = tr.querySelector('.ret-remove');
-    retRemoveBtn.onclick = function() {
+    retRemoveBtn.onclick = function () {
       console.log('Return item delete button clicked');
       this.closest('tr').remove();
       console.log('Return item row removed successfully');
@@ -1519,7 +1751,7 @@ function buildReturnForm(inv) {
     qtyInput.addEventListener('input', recomputeReturnTotal);
     priceInput.addEventListener('input', recomputeReturnTotal);
     tr.getData = () => {
-      const name = nameInput.value.trim() || (selected?.name || '');
+      const name = nameInput.value.trim() || selected?.name || '';
       let id = selected?.id || null;
       return {
         product: name, // legacy
@@ -1535,15 +1767,24 @@ function buildReturnForm(inv) {
   // Start empty (no auto rows)
   const body = $('#return-body');
 
-  $('#add-return-row').addEventListener('click', () => { body.appendChild(newReturnRow()); });
+  $('#add-return-row').addEventListener('click', () => {
+    body.appendChild(newReturnRow());
+  });
 
   $('#submit-return').addEventListener('click', async () => {
-    const items = $$('#return-body tr').map(tr => tr.getData()).filter(x => x.product && x.qty > 0);
-    if (!items.length) { showErrorMessage('أضف صنفًا واحدًا على الأقل للمرتجع'); return; }
+    const items = $$('#return-body tr')
+      .map(tr => tr.getData())
+      .filter(x => x.product && x.qty > 0);
+    if (!items.length) {
+      showErrorMessage('أضف صنفًا واحدًا على الأقل للمرتجع');
+      return;
+    }
     // Prefer numeric invoiceNumber; fallback to normalized _id string
     let originalInvoice = inv.invoiceNumber ?? inv._id;
     if (typeof originalInvoice === 'object' && originalInvoice?.buffer) {
-      originalInvoice = Array.from(originalInvoice.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+      originalInvoice = Array.from(originalInvoice.buffer)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
     } else if (typeof originalInvoice === 'object' && originalInvoice?.toString) {
       originalInvoice = originalInvoice.toString();
     }
@@ -1563,26 +1804,29 @@ async function loadInvoices() {
   const filters = {};
   if (search) filters.search = normalizeDigits(search);
   if (showDeletedOnly) filters.deleted = true; // only deleted
-  
+
   if (DEBUG_MODE) console.log('📋 Invoice filters:', filters);
-  
+
   const container = $('#invoice-list');
   if (!container) {
     console.error('❌ Invoice list container not found!');
     showErrorMessage('خطأ: لم يتم العثور على حاوية قائمة الفواتير');
     return;
   }
-  
+
   // Show loading state
   showLoadingState(container, 'جاري تحميل الفواتير...');
-  
+
   try {
     const list = await window.api.invoices.list(filters);
     if (DEBUG_MODE) console.log('✅ Invoices loaded:', list.length);
     if (DEBUG_MODE) console.log('📊 First invoice sample:', list[0]);
+
+    // Hide loading state after successful data load
+    hideLoadingState(container);
     
     container.innerHTML = '';
-    
+
     if (list.length === 0) {
       container.innerHTML = `
         <div style="
@@ -1602,23 +1846,28 @@ async function loadInvoices() {
       if (DEBUG_MODE) console.log('ℹ️ No invoices found, showing empty message');
       return;
     }
-    
+
     if (DEBUG_MODE) console.log('Rendering', list.length, 'invoices');
-    
+
     list.forEach(inv => {
       // Prefer numeric external id
       const invoiceNumberExt = inv.invoiceNumber;
       // Fallback to internal _id string if needed
       let internalId = inv._id;
       if (typeof internalId === 'object' && internalId.buffer) {
-        internalId = Array.from(internalId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+        internalId = Array.from(internalId.buffer)
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
       } else if (typeof internalId === 'object' && internalId.toString) {
         internalId = internalId.toString();
       } else {
         internalId = String(internalId);
       }
-      const externalId = (Number.isFinite(Number(invoiceNumberExt)) ? String(invoiceNumberExt) : internalId);
-      if (!externalId) { console.error('❌ Missing invoice identifier', inv); return; }
+      const externalId = Number.isFinite(Number(invoiceNumberExt)) ? String(invoiceNumberExt) : internalId;
+      if (!externalId) {
+        console.error('❌ Missing invoice identifier', inv);
+        return;
+      }
       const card = document.createElement('div');
       card.className = 'list-card';
       if (inv.deleted) {
@@ -1626,39 +1875,48 @@ async function loadInvoices() {
         card.style.border = '1px dashed #ef4444';
         card.style.background = '#fff7ed';
       }
-      const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
-        ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
-        : '';
-      const returnTotal = (inv.payments || []).filter(p => (p.note || '').trim() === 'مرتجع').reduce((s, p) => s + Number(p.amount || 0), 0);
+      const discountInfo =
+        inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0
+          ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
+          : '';
+      const returnTotal = (inv.payments || [])
+        .filter(p => (p.note || '').trim() === 'مرتجع')
+        .reduce((s, p) => s + Number(p.amount || 0), 0);
       card.innerHTML = `
         <div>
           <div><strong>${inv.customerName || inv.customer?.name || ''}</strong> — ${inv.customerPhone || inv.customer?.phone || ''}</div>
           <div class="muted">السباك: ${inv.plumberName || ''}${discountInfo}</div>
-          <div class="muted">${inv.deleted ? 'محذوفة' : (inv.archived ? 'مؤرشفة' : 'نشطة')} | تاريخ الإنشاء: ${formatGregorian(inv.createdAt, true)} | آخر تحديث: ${formatGregorian(inv.updatedAt, true)}</div>
+          <div class="muted">${inv.deleted ? 'محذوفة' : inv.archived ? 'مؤرشفة' : 'نشطة'} | تاريخ الإنشاء: ${formatGregorian(inv.createdAt, true)} | آخر تحديث: ${formatGregorian(inv.updatedAt, true)}</div>
           <div class="muted">رقم الفاتورة: ${invoiceNumberExt ?? '—'} | ID: ${internalId}</div>
           <div class="muted">الإجمالي: ${currency(inv.total)} | المرتجع: ${currency(returnTotal)} | المتبقي: ${currency(inv.remaining)}</div>
         </div>
         <div>
-          ${inv.deleted ? `
+          ${
+            inv.deleted
+              ? `
             <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
             <button type="button" data-id="${externalId}" class="btn-restore">استعادة</button>
             <button type="button" data-id="${externalId}" class="btn-hard-delete">حذف نهائي</button>
-          ` : `
+          `
+              : `
             <button type="button" data-id="${externalId}" class="btn-view">عرض</button>
             <button type="button" data-id="${externalId}" class="btn-print">طباعة</button>
             <button type="button" data-id="${externalId}" class="btn-delete">حذف</button>
-          `}
+          `
+          }
         </div>
       `;
       container.appendChild(card);
       if (DEBUG_MODE) console.log('Added invoice card for:', inv.customer?.name || 'Unknown');
     });
-    
+
     if (DEBUG_MODE) console.log('All invoice cards added to container');
   } catch (error) {
     console.error('Error loading invoices:', error);
     const container = $('#invoice-list');
     if (container) {
+      // Hide loading state even on error
+      hideLoadingState(container);
       container.innerHTML = '<div class="muted" style="color: red;">خطأ في تحميل الفواتير</div>';
     }
   }
@@ -1666,38 +1924,42 @@ async function loadInvoices() {
 
 $('#refresh-invoices').addEventListener('click', loadInvoices);
 $('#show-deleted-only')?.addEventListener('change', loadInvoices);
-$('#invoice-search').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadInvoices(); });
+$('#invoice-search').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadInvoices();
+});
 // Live search invoices as the user types (debounced)
-$('#invoice-search')?.addEventListener('input', debounce(() => {
-  loadInvoices();
-}, 250));
-
+$('#invoice-search')?.addEventListener(
+  'input',
+  debounce(() => {
+    loadInvoices();
+  }, 250)
+);
 
 // Invoice list button handlers
-$('#invoice-list').addEventListener('click', async (e) => {
+$('#invoice-list').addEventListener('click', async e => {
   const btn = e.target.closest('button');
   if (!btn) return;
-  
+
   // Prevent event bubbling that might interfere with inputs
   e.preventDefault();
   e.stopPropagation();
-  
+
   const id = btn.getAttribute('data-id');
   // Accept either numeric invoiceNumber or 24-hex ObjectId
-  const isNumericId = (v) => /^\d+$/.test(String(v).trim());
-  const isHex24 = (v) => /^[a-f0-9]{24}$/i.test(String(v).trim());
+  const isNumericId = v => /^\d+$/.test(String(v).trim());
+  const isHex24 = v => /^[a-f0-9]{24}$/i.test(String(v).trim());
   if (!id || !(isNumericId(id) || isHex24(id))) {
     console.error('❌ Invalid invoice ID clicked:', id);
     showErrorMessage('خطأ: رقم الفاتورة غير صالح');
     return;
   }
-  
+
   if (DEBUG_MODE) console.log('=== INVOICE LIST CLICK DEBUG ===');
   if (DEBUG_MODE) console.log('Click target:', e.target);
   if (DEBUG_MODE) console.log('Target tagName:', e.target.tagName);
   if (DEBUG_MODE) console.log('Target className:', e.target.className);
   if (DEBUG_MODE) console.log('✅ Button found:', btn.className, 'ID:', id, 'Type:', typeof id);
-  
+
   if (btn.classList.contains('btn-print')) {
     if (DEBUG_MODE) console.log('🖨️ Print button clicked');
     try {
@@ -1733,13 +1995,19 @@ $('#invoice-list').addEventListener('click', async (e) => {
   } else if (btn.classList.contains('btn-delete')) {
     // Soft delete invoice
     try {
-      const ok = await showConfirmation({ title: 'حذف فاتورة', message: 'هل تريد حذف الفاتورة؟ يمكن استعادتها لاحقًا من قائمة المحذوفة.' });
+      const ok = await showConfirmation({
+        title: 'حذف فاتورة',
+        message: 'هل تريد حذف الفاتورة؟ يمكن استعادتها لاحقًا من قائمة المحذوفة.'
+      });
       if (!ok) return;
       const res = await window.api.invoices.delete(isNumericId(id) ? Number(id) : String(id));
       if (res && res.error) throw new Error(res.message || 'فشل حذف الفاتورة');
       await loadInvoices();
       const panel = $('#invoice-detail');
-      if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+      if (panel) {
+        panel.style.display = 'none';
+        panel.innerHTML = '';
+      }
       showErrorMessage('تم حذف الفاتورة', 'success');
     } catch (error) {
       console.error('❌ Delete error:', error);
@@ -1757,7 +2025,10 @@ $('#invoice-list').addEventListener('click', async (e) => {
     }
   } else if (btn.classList.contains('btn-hard-delete')) {
     try {
-      const ok = await showConfirmation({ title: 'حذف نهائي', message: 'تحذير: حذف نهائي لا يمكن التراجع عنه. هل أنت متأكد؟' });
+      const ok = await showConfirmation({
+        title: 'حذف نهائي',
+        message: 'تحذير: حذف نهائي لا يمكن التراجع عنه. هل أنت متأكد؟'
+      });
       if (!ok) return;
       const res = await window.api.invoices.hardDelete(isNumericId(id) ? Number(id) : String(id));
       if (res && res.error) throw new Error(res.message || 'فشل الحذف النهائي');
@@ -1807,11 +2078,14 @@ $('#refresh-products')?.addEventListener('click', async () => {
   renderProductList(list);
 });
 
-$('#product-search')?.addEventListener('input', debounce(async (e) => {
-  const q = e.target.value.trim();
-  const list = q ? await window.api.products.search(q) : await window.api.products.list();
-  renderProductList(list);
-}, 250));
+$('#product-search')?.addEventListener(
+  'input',
+  debounce(async e => {
+    const q = e.target.value.trim();
+    const list = q ? await window.api.products.search(q) : await window.api.products.list();
+    renderProductList(list);
+  }, 250)
+);
 
 function mountProductRow(product) {
   const row = document.createElement('tr');
@@ -1831,24 +2105,32 @@ function mountProductRow(product) {
   // Add event listeners for edit and delete
   const editBtn = row.querySelector('.btn-edit');
   const deleteBtn = row.querySelector('.btn-delete');
-  
-  editBtn.addEventListener('click', (e) => {
+
+  editBtn.addEventListener('click', e => {
     e.preventDefault();
     e.stopPropagation();
     setEditMode(product);
   });
-  deleteBtn.addEventListener('click', async (e) => {
+  deleteBtn.addEventListener('click', async e => {
     e.preventDefault();
     e.stopPropagation();
-    const ok = await showConfirmation({ title: 'حذف منتج', message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.' });
+    const ok = await showConfirmation({
+      title: 'حذف منتج',
+      message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.'
+    });
     if (!ok) return;
     try {
       const res = await window.api.products.delete(product._id);
       if (res && res.error) throw new Error(res.message || 'فشل حذف المنتج');
       row.remove();
       const msg = $('#product-message');
-      if (msg) { msg.textContent = 'تم الحذف'; setTimeout(() => (msg.textContent = ''), 1500); }
-      try { await loadLowStockProducts(); } catch {}
+      if (msg) {
+        msg.textContent = 'تم الحذف';
+        setTimeout(() => (msg.textContent = ''), 1500);
+      }
+      try {
+        await loadLowStockProducts();
+      } catch {}
     } catch (err) {
       showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
     }
@@ -1900,7 +2182,7 @@ function mountProductRow(product) {
 
     const saveBtn = row.querySelector('.btn-save');
     const cancelBtn = row.querySelector('.btn-cancel');
-    
+
     saveBtn.addEventListener('click', async () => {
       const name = row.querySelector('.edit-name').value.trim();
       const category = row.querySelector('.edit-category').value.trim();
@@ -1908,19 +2190,31 @@ function mountProductRow(product) {
       const sellingPrice = Number(row.querySelector('.edit-sell').value || 0);
       const stock = Number(row.querySelector('.edit-stock').value || 0);
       const reorderLevel = Number(row.querySelector('.edit-reorder').value || 0);
-      
+
       try {
-        const updated = await window.api.products.update(p._id, { name, category, buyingPrice, sellingPrice, stock, reorderLevel });
+        const updated = await window.api.products.update(p._id, {
+          name,
+          category,
+          buyingPrice,
+          sellingPrice,
+          stock,
+          reorderLevel
+        });
         Object.assign(p, updated);
         setViewMode(p);
         const msg = $('#product-message');
-        if (msg) { msg.textContent = 'تم التحديث'; setTimeout(() => (msg.textContent = ''), 1500); }
-        try { await loadLowStockProducts(); } catch {}
+        if (msg) {
+          msg.textContent = 'تم التحديث';
+          setTimeout(() => (msg.textContent = ''), 1500);
+        }
+        try {
+          await loadLowStockProducts();
+        } catch {}
       } catch (err) {
         showErrorMessage('تعذر تحديث المنتج: ' + (err.message || ''));
       }
     });
-    
+
     cancelBtn.addEventListener('click', () => setViewMode(p));
   }
 
@@ -1937,28 +2231,36 @@ function mountProductRow(product) {
         <button type="button" class="btn-delete">حذف</button>
       </td>
     `;
-    
+
     // Re-add event listeners
     const editBtn = row.querySelector('.btn-edit');
     const deleteBtn = row.querySelector('.btn-delete');
-    
-    editBtn.addEventListener('click', (e) => {
+
+    editBtn.addEventListener('click', e => {
       e.preventDefault();
       e.stopPropagation();
       setEditMode(p);
     });
-    deleteBtn.addEventListener('click', async (e) => {
+    deleteBtn.addEventListener('click', async e => {
       e.preventDefault();
       e.stopPropagation();
-      const ok = await showConfirmation({ title: 'حذف منتج', message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.' });
+      const ok = await showConfirmation({
+        title: 'حذف منتج',
+        message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.'
+      });
       if (!ok) return;
       try {
         const res = await window.api.products.delete(p._id);
         if (res && res.error) throw new Error(res.message || 'فشل حذف المنتج');
         row.remove();
         const msg = $('#product-message');
-        if (msg) { msg.textContent = 'تم الحذف'; setTimeout(() => (msg.textContent = ''), 1500); }
-        try { await loadLowStockProducts(); } catch {}
+        if (msg) {
+          msg.textContent = 'تم الحذف';
+          setTimeout(() => (msg.textContent = ''), 1500);
+        }
+        try {
+          await loadLowStockProducts();
+        } catch {}
       } catch (err) {
         showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
       }
@@ -1996,20 +2298,23 @@ function mountProductRowReadonly(p) {
       <button type="button" class="btn-delete">حذف</button>
     </td>
   `;
-  
+
   // Add event listeners for edit and delete
   const editBtn = row.querySelector('.btn-edit');
   const deleteBtn = row.querySelector('.btn-delete');
-  
-  editBtn.addEventListener('click', (e) => {
+
+  editBtn.addEventListener('click', e => {
     e.preventDefault();
     e.stopPropagation();
     setEditMode(p);
   });
-  deleteBtn.addEventListener('click', async (e) => {
+  deleteBtn.addEventListener('click', async e => {
     e.preventDefault();
     e.stopPropagation();
-    const ok = await showConfirmation({ title: 'حذف منتج', message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.' });
+    const ok = await showConfirmation({
+      title: 'حذف منتج',
+      message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.'
+    });
     if (!ok) return;
     try {
       const res = await window.api.products.delete(p._id);
@@ -2017,14 +2322,19 @@ function mountProductRowReadonly(p) {
       row.remove();
       // Show success message
       const msg = $('#lowstock-message');
-      if (msg) { msg.textContent = 'تم حذف المنتج بنجاح'; setTimeout(() => (msg.textContent = ''), 2000); }
+      if (msg) {
+        msg.textContent = 'تم حذف المنتج بنجاح';
+        setTimeout(() => (msg.textContent = ''), 2000);
+      }
       // Refresh the low stock list
-      try { await loadLowStockProducts(); } catch {}
+      try {
+        await loadLowStockProducts();
+      } catch {}
     } catch (err) {
       showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
     }
   });
-  
+
   function setEditMode(product) {
     row.innerHTML = `
       <td><input type="text" class="edit-name" value="${product.name}" style="width:100%; border:none; background:transparent" /></td>
@@ -2038,11 +2348,11 @@ function mountProductRowReadonly(p) {
         <button type="button" class="btn-cancel" style="background:#6b7280; color:#fff">إلغاء</button>
       </td>
     `;
-    
+
     // Add event listeners for save and cancel
     const saveBtn = row.querySelector('.btn-save');
     const cancelBtn = row.querySelector('.btn-cancel');
-    
+
     saveBtn.addEventListener('click', async () => {
       const name = row.querySelector('.edit-name').value.trim();
       const category = row.querySelector('.edit-category').value.trim();
@@ -2050,25 +2360,37 @@ function mountProductRowReadonly(p) {
       const sellingPrice = Number(row.querySelector('.edit-sell').value || 0);
       const stock = Number(row.querySelector('.edit-stock').value || 0);
       const reorderLevel = Number(row.querySelector('.edit-reorder').value || 0);
-      
+
       try {
-        const updated = await window.api.products.update(p._id, { name, category, buyingPrice, sellingPrice, stock, reorderLevel });
+        const updated = await window.api.products.update(p._id, {
+          name,
+          category,
+          buyingPrice,
+          sellingPrice,
+          stock,
+          reorderLevel
+        });
         // Update the product object with new data
         Object.assign(p, updated);
         setViewMode(p);
         // Show success message
         const msg = $('#lowstock-message');
-        if (msg) { msg.textContent = `تم تحديث المنتج: ${updated.name}`; setTimeout(() => (msg.textContent = ''), 2000); }
+        if (msg) {
+          msg.textContent = `تم تحديث المنتج: ${updated.name}`;
+          setTimeout(() => (msg.textContent = ''), 2000);
+        }
         // Refresh the low stock list to reflect changes
-        try { await loadLowStockProducts(); } catch {}
+        try {
+          await loadLowStockProducts();
+        } catch {}
       } catch (err) {
         showErrorMessage('تعذر تحديث المنتج: ' + (err.message || ''));
       }
     });
-    
+
     cancelBtn.addEventListener('click', () => setViewMode(product));
   }
-  
+
   function setViewMode(product) {
     row.innerHTML = `
       <td>${product.name}</td>
@@ -2082,20 +2404,23 @@ function mountProductRowReadonly(p) {
         <button type="button" class="btn-delete">حذف</button>
       </td>
     `;
-    
+
     // Re-attach event listeners
     const editBtn = row.querySelector('.btn-edit');
     const deleteBtn = row.querySelector('.btn-delete');
-    
-    editBtn.addEventListener('click', (e) => {
+
+    editBtn.addEventListener('click', e => {
       e.preventDefault();
       e.stopPropagation();
       setEditMode(product);
     });
-    deleteBtn.addEventListener('click', async (e) => {
+    deleteBtn.addEventListener('click', async e => {
       e.preventDefault();
       e.stopPropagation();
-      const ok = await showConfirmation({ title: 'حذف منتج', message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.' });
+      const ok = await showConfirmation({
+        title: 'حذف منتج',
+        message: 'هل تريد حذف هذا المنتج؟ سيؤثر ذلك على إضافته مستقبلاً في الفواتير، ولن يحذف الفواتير السابقة.'
+      });
       if (!ok) return;
       try {
         const res = await window.api.products.delete(p._id);
@@ -2103,15 +2428,20 @@ function mountProductRowReadonly(p) {
         row.remove();
         // Show success message
         const msg = $('#lowstock-message');
-        if (msg) { msg.textContent = 'تم حذف المنتج بنجاح'; setTimeout(() => (msg.textContent = ''), 2000); }
+        if (msg) {
+          msg.textContent = 'تم حذف المنتج بنجاح';
+          setTimeout(() => (msg.textContent = ''), 2000);
+        }
         // Refresh the low stock list
-        try { await loadLowStockProducts(); } catch {}
+        try {
+          await loadLowStockProducts();
+        } catch {}
       } catch (err) {
         showErrorMessage('تعذر حذف المنتج: ' + (err.message || ''));
       }
     });
   }
-  
+
   return row;
 }
 
@@ -2135,7 +2465,10 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         await loadLowStockProducts();
         const msg = $('#lowstock-message');
-        if (msg) { msg.textContent = 'تم تحديث القائمة'; setTimeout(() => (msg.textContent = ''), 1500); }
+        if (msg) {
+          msg.textContent = 'تم تحديث القائمة';
+          setTimeout(() => (msg.textContent = ''), 1500);
+        }
       } catch (error) {
         console.error('Error refreshing low stock products:', error);
         showErrorMessage('تعذر تحديث قائمة المنتجات قرب النفاد');
@@ -2147,10 +2480,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // Customers & Plumbers page
 const customerForm = $('#customer-form');
 if (customerForm) {
-  customerForm.addEventListener('submit', async (e) => {
+  customerForm.addEventListener('submit', async e => {
     e.preventDefault();
     try {
-      await window.api.customers.upsert({ name: $('#new-cust-name').value.trim(), phone: $('#new-cust-phone').value.trim() });
+      await window.api.customers.upsert({
+        name: $('#new-cust-name').value.trim(),
+        phone: $('#new-cust-phone').value.trim()
+      });
       $('#new-cust-name').value = '';
       $('#new-cust-phone').value = '';
       await loadCustomers();
@@ -2168,7 +2504,7 @@ if (customerForm) {
 
 const plumberForm = $('#plumber-form');
 if (plumberForm) {
-  plumberForm.addEventListener('submit', async (e) => {
+  plumberForm.addEventListener('submit', async e => {
     e.preventDefault();
     const nameInput = $('#new-plumber-name');
     const phoneInput = $('#new-plumber-phone');
@@ -2182,18 +2518,17 @@ if (plumberForm) {
 
     try {
       const result = await window.api.plumbers.upsert({ name, phone });
-      
+
       if (result && result.error) {
         // Handle errors returned from the main process (e.g., duplicate phone)
         throw new Error(result.message);
       }
-      
+
       // Success
       nameInput.value = '';
       phoneInput.value = '';
       await loadPlumbers();
       showErrorMessage('تم حفظ السباك بنجاح.', 'success');
-
     } catch (error) {
       // Handle thrown errors (from API or validation)
       console.error('Error creating plumber:', error);
@@ -2204,10 +2539,10 @@ if (plumberForm) {
 
 const refreshPeopleBtn = $('#refresh-people');
 if (refreshPeopleBtn) {
-  refreshPeopleBtn.addEventListener('click', async () => { 
+  refreshPeopleBtn.addEventListener('click', async () => {
     try {
-      await loadCustomers(); 
-      await loadPlumbers(); 
+      await loadCustomers();
+      await loadPlumbers();
     } catch (error) {
       console.error('Error refreshing people:', error);
     }
@@ -2218,7 +2553,9 @@ function normalizeObjId(id) {
   if (!id) return '';
   if (typeof id === 'string') return id;
   if (typeof id === 'object' && id.buffer) {
-    return Array.from(id.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+    return Array.from(id.buffer)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
   }
   if (typeof id === 'object' && id.toString) return id.toString();
   return String(id);
@@ -2251,7 +2588,7 @@ async function loadCustomers() {
   });
 
   // Click actions
-  container.onclick = async (e) => {
+  container.onclick = async e => {
     const btn = e.target.closest('button');
     if (!btn) return;
     e.preventDefault();
@@ -2268,7 +2605,12 @@ async function loadCustomers() {
     } else if (btn.classList.contains('btn-edit')) {
       const curName = btn.getAttribute('data-name') || '';
       const curPhone = btn.getAttribute('data-phone') || '';
-      const result = await openEditPersonModal({ title: 'تعديل العميل', name: curName, phone: curPhone, requirePhone: true });
+      const result = await openEditPersonModal({
+        title: 'تعديل العميل',
+        name: curName,
+        phone: curPhone,
+        requirePhone: true
+      });
       if (!result) return;
       try {
         const res = await window.api.customers.update(id, { name: result.name, phone: result.phone });
@@ -2276,13 +2618,16 @@ async function loadCustomers() {
           showErrorMessage('تم التعديل', 'success');
           await loadCustomers();
         } else {
-          showErrorMessage('تعذر التعديل: ' + (res?.message || '')); 
+          showErrorMessage('تعذر التعديل: ' + (res?.message || ''));
         }
       } catch (err) {
         showErrorMessage('خطأ في التعديل: ' + err.message);
       }
     } else if (btn.classList.contains('btn-delete')) {
-      if (!await showConfirmation({ title: 'حذف عميل', message: 'حذف هذا العميل؟ سيبقى سجل الفواتير مرتبطاً بالمعرف.' })) return;
+      if (
+        !(await showConfirmation({ title: 'حذف عميل', message: 'حذف هذا العميل؟ سيبقى سجل الفواتير مرتبطاً بالمعرف.' }))
+      )
+        return;
       try {
         const res = await window.api.customers.delete(id);
         if (res && !res.error) {
@@ -2324,7 +2669,7 @@ async function loadPlumbers() {
     container.appendChild(row);
   });
 
-  container.onclick = async (e) => {
+  container.onclick = async e => {
     const btn = e.target.closest('button');
     if (!btn) return;
     e.preventDefault();
@@ -2341,7 +2686,12 @@ async function loadPlumbers() {
       const id = btn.getAttribute('data-id');
       const curName = btn.getAttribute('data-name') || '';
       const curPhone = btn.getAttribute('data-phone') || '';
-      const result = await openEditPersonModal({ title: 'تعديل السباك', name: curName, phone: curPhone, requirePhone: false });
+      const result = await openEditPersonModal({
+        title: 'تعديل السباك',
+        name: curName,
+        phone: curPhone,
+        requirePhone: false
+      });
       if (!result) return;
       try {
         const res = await window.api.plumbers.update(id, { name: result.name, phone: result.phone });
@@ -2356,7 +2706,7 @@ async function loadPlumbers() {
       }
     } else if (btn.classList.contains('btn-delete')) {
       const id = btn.getAttribute('data-id');
-      if (!await showConfirmation({ title: 'حذف سباك', message: 'حذف هذا السباك؟' })) return;
+      if (!(await showConfirmation({ title: 'حذف سباك', message: 'حذف هذا السباك؟' }))) return;
       try {
         const res = await window.api.plumbers.delete(id);
         if (res && !res.error) {
@@ -2380,44 +2730,47 @@ async function displaySearchResults(searchTerm = '') {
     if (term) {
       filters.search = term;
     }
-    
+
     const list = await window.api.invoices.list(filters);
     const container = $('#search-results');
-    
+
     if (!container) {
       console.error('Search results container not found!');
       return;
     }
-    
+
     container.innerHTML = '';
-    
+
     if (list.length === 0) {
       container.innerHTML = '<div class="muted">لا توجد فواتير</div>';
       return;
     }
-    
+
     list.forEach(inv => {
       // Convert ObjectId buffer to string if needed
       let invoiceId = inv._id;
       if (typeof invoiceId === 'object' && invoiceId.buffer) {
         // Convert buffer to hex string
-        invoiceId = Array.from(invoiceId.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+        invoiceId = Array.from(invoiceId.buffer)
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
         if (DEBUG_MODE) console.log('🔄 Converted buffer ID to string in search:', invoiceId);
       } else if (typeof invoiceId === 'object' && invoiceId.toString) {
         invoiceId = invoiceId.toString();
       }
-      
+
       if (!invoiceId || typeof invoiceId !== 'string' || invoiceId.length < 8) {
         console.error('❌ Invalid invoice _id:', invoiceId, inv);
         return;
       }
-      
+
       const card = document.createElement('div');
       card.className = 'list-card';
-      const discountInfo = (inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0)
-        ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
-        : '';
-        
+      const discountInfo =
+        inv.discountAbogaliPercent > 0 || inv.discountBrPercent > 0
+          ? ` | خصم ابوغالي ${inv.discountAbogaliPercent}% | خصم BR ${inv.discountBrPercent}%`
+          : '';
+
       card.innerHTML = `
         <div>
           <div><strong>${inv.customer?.name || ''}</strong> — ${inv.customer?.phone || ''}</div>
@@ -2433,19 +2786,19 @@ async function displaySearchResults(searchTerm = '') {
       `;
       container.appendChild(card);
     });
-    
+
     // Add event listeners for the buttons in search results
-    container.addEventListener('click', async (e) => {
+    container.addEventListener('click', async e => {
       const btn = e.target.closest('button');
       if (!btn) return;
       const id = btn.getAttribute('data-id');
-      
+
       if (!id || typeof id !== 'string' || id.length < 8) {
         console.error('❌ Invalid invoice ID clicked:', id);
         showErrorMessage('خطأ: رقم الفاتورة غير صالح');
         return;
       }
-      
+
       if (btn.classList.contains('btn-print')) {
         try {
           await window.api.print.invoice(id);
@@ -2475,7 +2828,6 @@ async function displaySearchResults(searchTerm = '') {
         }
       }
     });
-    
   } catch (error) {
     console.error('Error displaying search results:', error);
     const container = $('#search-results');
@@ -2493,7 +2845,7 @@ if (searchBtn) {
       const searchTerm = normalizeDigits($('#search-input').value.trim());
       if (DEBUG_MODE) console.log('Search button clicked with term:', searchTerm);
       await displaySearchResults(searchTerm);
-      
+
       if (searchTerm) {
         showErrorMessage(`تم البحث عن: ${searchTerm}`, 'success');
       } else {
@@ -2524,7 +2876,7 @@ if (clearSearchBtn) {
 // Add Enter key support for search
 const searchInput = $('#search-input');
 if (searchInput) {
-  searchInput.addEventListener('keydown', (e) => {
+  searchInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       const searchBtn = $('#search-btn');
       if (searchBtn) {
@@ -2533,10 +2885,13 @@ if (searchInput) {
     }
   });
   // Live search on search tab as user types (debounced)
-  searchInput.addEventListener('input', debounce((e) => {
-    const term = normalizeDigits(e.target.value.trim());
-    displaySearchResults(term);
-  }, 250));
+  searchInput.addEventListener(
+    'input',
+    debounce(e => {
+      const term = normalizeDigits(e.target.value.trim());
+      displaySearchResults(term);
+    }, 250)
+  );
 }
 
 // Load all invoices when search tab is opened
@@ -2563,7 +2918,7 @@ $$('.tab').forEach(tab => {
 // Products creation form: stay on products tab and show status
 const productForm = $('#product-form');
 if (productForm) {
-  productForm.addEventListener('submit', async (e) => {
+  productForm.addEventListener('submit', async e => {
     e.preventDefault();
     try {
       const created = await window.api.products.create({
@@ -2581,9 +2936,14 @@ if (productForm) {
       $('#prod-stock').value = '';
       $('#prod-reorder').value = '';
       const msg = $('#product-message');
-      if (msg) { msg.textContent = `تم الحفظ: ${created.name}`; setTimeout(() => (msg.textContent = ''), 2000); }
+      if (msg) {
+        msg.textContent = `تم الحفظ: ${created.name}`;
+        setTimeout(() => (msg.textContent = ''), 2000);
+      }
       await loadProducts();
-      try { await loadLowStockProducts(); } catch {}
+      try {
+        await loadLowStockProducts();
+      } catch {}
     } catch (error) {
       console.error('Error creating product:', error);
     }
@@ -2660,21 +3020,21 @@ function showDatabaseError() {
       </div>
     </div>
   `;
-  
+
   document.body.insertAdjacentHTML('beforeend', errorHtml);
 }
 
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', async () => {
   if (DEBUG_MODE) console.log('DOM loaded, initializing app...');
-  
+
   // Check database status first
   const dbWorking = await checkDatabaseStatus();
   if (!dbWorking) {
     showDatabaseError();
     return; // Don't continue with normal initialization
   }
-  
+
   // Set up periodic database health check (every 30 seconds)
   setInterval(async () => {
     const dbWorking = await checkDatabaseStatus();
@@ -2685,50 +3045,56 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
   }, 30000);
-  
+
   // Initialize invoice form with first row
   const itemsBody = $('#items-body');
   if (itemsBody && itemsBody.children.length === 0) {
     itemsBody.appendChild(newItemRow());
     updateRowNumbers();
   }
-  
+
   // Test if basic elements exist
   const invoiceList = $('#invoice-list');
   const refreshBtn = $('#refresh-invoices');
   if (DEBUG_MODE) console.log('Invoice list element:', invoiceList ? 'Found' : 'NOT FOUND');
   if (DEBUG_MODE) console.log('Refresh button:', refreshBtn ? 'Found' : 'NOT FOUND');
-  
+
   // Add visible indicator that frontend is working
   if (invoiceList) {
-    invoiceList.innerHTML = '<div style="color: green; padding: 10px; border: 2px solid green;">✓ Frontend loaded successfully - Testing invoice loading...</div>';
+    invoiceList.innerHTML =
+      '<div style="color: green; padding: 10px; border: 2px solid green;">✓ Frontend loaded successfully - Testing invoice loading...</div>';
   }
-  
+
   // Initialize font size
   initializeFontSize();
-  
+
   // Load default discount values
   loadDefaultDiscounts();
-  
+
   // Initial boot
   try {
     $('#add-item')?.click();
     $('#add-payment')?.click();
-    
+
     // Force load invoices with extra logging
     if (DEBUG_MODE) console.log('About to load invoices...');
     setTimeout(() => {
-      loadInvoices().then(() => {
-        if (DEBUG_MODE) console.log('loadInvoices completed');
-      }).catch(error => {
-        console.error('loadInvoices failed:', error);
-        const invoiceList = $('#invoice-list');
-        if (invoiceList) {
-          invoiceList.innerHTML = '<div style="color: red; padding: 10px; border: 2px solid red;">✗ Error loading invoices: ' + error.message + '</div>';
-        }
-      });
+      loadInvoices()
+        .then(() => {
+          if (DEBUG_MODE) console.log('loadInvoices completed');
+        })
+        .catch(error => {
+          console.error('loadInvoices failed:', error);
+          const invoiceList = $('#invoice-list');
+          if (invoiceList) {
+            invoiceList.innerHTML =
+              '<div style="color: red; padding: 10px; border: 2px solid red;">✗ Error loading invoices: ' +
+              error.message +
+              '</div>';
+          }
+        });
     }, 1000);
-    
+
     loadProducts();
     loadCustomers();
     loadPlumbers();
@@ -2736,7 +3102,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (error) {
     console.error('Error initializing app:', error);
     if (invoiceList) {
-      invoiceList.innerHTML = '<div style="color: red; padding: 10px; border: 2px solid red;">✗ Error initializing: ' + error.message + '</div>';
+      invoiceList.innerHTML =
+        '<div style="color: red; padding: 10px; border: 2px solid red;">✗ Error initializing: ' +
+        error.message +
+        '</div>';
     }
   }
 });
@@ -2775,10 +3144,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.accept = '.json';
-        fileInput.onchange = async (e) => {
+        fileInput.onchange = async e => {
           const file = e.target.files[0];
           if (!file) return;
-          
+
           try {
             showLoadingState(settingsRestoreBtn, 'جاري الاستعادة...');
             const result = await window.api.backup.restore(file.path);
@@ -2804,7 +3173,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const settingsFontSize = $('#settings-font-size');
   const settingsFontSizeValue = $('#settings-font-size-value');
   if (settingsFontSize && settingsFontSizeValue) {
-    settingsFontSize.addEventListener('input', (e) => {
+    settingsFontSize.addEventListener('input', e => {
       const size = e.target.value;
       settingsFontSizeValue.textContent = size + 'px';
       applyUiFontSize(size);
@@ -2819,7 +3188,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const printFontSize = $('#settings-print-font-size');
   const printFontSizeValue = $('#settings-print-font-size-value');
   if (printFontSize && printFontSizeValue) {
-    printFontSize.addEventListener('input', (e) => {
+    printFontSize.addEventListener('input', e => {
       const size = e.target.value;
       printFontSizeValue.textContent = size + 'px';
       localStorage.setItem('print-font-size', size);
@@ -2833,11 +3202,11 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const brDiscount = $('#br-discount').value;
         const aboghaliDiscount = $('#aboghali-discount').value;
-        
+
         // Save to localStorage
         localStorage.setItem('br-discount', brDiscount);
         localStorage.setItem('aboghali-discount', aboghaliDiscount);
-        
+
         showErrorMessage('تم حفظ الخصومات بنجاح', 'success');
       } catch (error) {
         showErrorMessage('خطأ في حفظ الخصومات: ' + error.message);
@@ -2875,13 +3244,13 @@ function loadDefaultDiscounts() {
   try {
     const brDiscount = localStorage.getItem('br-discount') || '0';
     const aboghaliDiscount = localStorage.getItem('aboghali-discount') || '0';
-    
+
     const brDiscountInput = $('#discount-br');
     const aboghaliDiscountInput = $('#discount-abogali');
-    
+
     if (brDiscountInput) brDiscountInput.value = brDiscount;
     if (aboghaliDiscountInput) aboghaliDiscountInput.value = aboghaliDiscount;
-    
+
     // Apply discounts to existing rows
     applyDiscountsToAllRows();
   } catch (error) {
@@ -2894,7 +3263,7 @@ function initializeFontSize() {
   try {
     const savedFontSize = getStoredFontSize();
     applyUiFontSize(savedFontSize);
-    
+
     // Update settings font size control if it exists
     const settingsFontSize = $('#settings-font-size');
     const settingsFontSizeValue = $('#settings-font-size-value');
@@ -2902,7 +3271,7 @@ function initializeFontSize() {
       settingsFontSize.value = savedFontSize;
       settingsFontSizeValue.textContent = savedFontSize + 'px';
     }
-    
+
     if (DEBUG_MODE) console.log('Font size initialized to:', savedFontSize + 'px');
   } catch (error) {
     if (DEBUG_MODE) console.error('Error initializing font size:', error);

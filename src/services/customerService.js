@@ -4,8 +4,12 @@ async function upsertCustomerByPhone(data) {
   const { Customer } = getLocalModels();
   const name = String(data.name || '').trim();
   const phone = String(data.phone || '').trim();
-  if (!phone) throw new Error('رقم الهاتف مطلوب');
-  if (!name) throw new Error('الاسم مطلوب');
+  if (!phone) {
+    throw new Error('رقم الهاتف مطلوب');
+  }
+  if (!name) {
+    throw new Error('الاسم مطلوب');
+  }
   try {
     const existing = await Customer.findOne({ phone }).lean();
     if (existing) {

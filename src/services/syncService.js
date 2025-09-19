@@ -10,7 +10,9 @@ async function enqueueSync(modelName, op, payload) {
 async function flushOnce() {
   const { atlasConn } = getConnections();
   const atlas = getAtlasModels();
-  if (!atlasConn || !atlas) return;
+  if (!atlasConn || !atlas) {
+    return;
+  }
   while (queue.length) {
     const job = queue.shift();
     const M = atlas[job.modelName];
@@ -34,7 +36,9 @@ async function flushOnce() {
 }
 
 function startBackgroundSync() {
-  if (syncing) return;
+  if (syncing) {
+    return;
+  }
   syncing = true;
   setInterval(() => {
     flushOnce().catch(() => {});

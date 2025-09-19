@@ -10,13 +10,15 @@ const plumberService = require('../services/plumberService');
 const invoiceService = require('../services/invoiceService');
 const { enqueueSync, startBackgroundSync } = require('../services/syncService');
 const { toObjectIdString } = require('../utils/objectIdUtils');
+const { createErrorResponse, asyncErrorHandler, normalizeId } = require('../utils/errorHandler');
+const { validateProduct, validateCustomer } = require('../utils/validation');
 
 let mainWindow;
 
 async function createWindow() {
   try {
     console.log('🚀 Starting application...');
-    
+
     console.log('📊 Attempting to connect to MongoDB...');
     try {
       // FORCE local MongoDB for packaged apps
@@ -25,7 +27,10 @@ async function createWindow() {
         mongoUri = 'mongodb://localhost:27017/plumbing_shop';
         console.log('🔗 FORCED local MongoDB for packaged app:', mongoUri);
       } else {
-        mongoUri = process.env.MONGODB_URI || process.env.MONGODB_ATLAS_URI || 'mongodb+srv://abdo326302:LISKKI3ujWdRbrZQ@cluster0.gcuboxy.mongodb.net/plumbing_shop';
+        mongoUri =
+          process.env.MONGODB_URI ||
+          process.env.MONGODB_ATLAS_URI ||
+          'mongodb+srv://abdo326302:LISKKI3ujWdRbrZQ@cluster0.gcuboxy.mongodb.net/plumbing_shop';
         console.log('🔗 Using MongoDB URI:', mongoUri.replace(/\/\/.*@/, '//***:***@'));
       }
       await connectLocalDb(mongoUri);
@@ -34,7 +39,7 @@ async function createWindow() {
       console.warn('⚠️ MongoDB connection failed, continuing without database...');
       console.warn('⚠️ Error details:', error.message);
     }
-    
+
     if (process.env.MONGODB_ATLAS_URI) {
       console.log('☁️ Connecting to Atlas database...');
       const atlasConn = await connectAtlasDb(process.env.MONGODB_ATLAS_URI);
@@ -46,7 +51,7 @@ async function createWindow() {
     } else {
       console.log('☁️ Atlas connection disabled (MONGODB_ATLAS_URI not set)');
     }
-    
+
     console.log('🔄 Starting background sync...');
     startBackgroundSync();
     console.log('✅ Background sync started');
@@ -63,205 +68,226 @@ async function createWindow() {
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
-        nodeIntegration: false
-      }
+        nodeIntegration: false,
+        sandbox: true, // Enable sandbox for security
+        allowRunningInsecureContent: false,
+        experimentalFeatures: false
+      },
+      show: false // Don't show until ready
     });
 
-// Restore IPC: import JSON files from a selected backup directory
-ipcMain.handle('backup:restore', async () => {
-  try {
-    const win = BrowserWindow.getFocusedWindow();
-    const { canceled, filePaths } = await dialog.showOpenDialog(win || null, {
-      title: 'اختر مجلد النسخة للاستراد',
-      buttonLabel: 'اختر هذا المجلد',
-      properties: ['openDirectory']
+    // Show window when ready to prevent visual flash
+    mainWindow.once('ready-to-show', () => {
+      mainWindow.show();
     });
-    if (canceled || !filePaths || !filePaths[0]) return { canceled: true };
 
-    const dir = filePaths[0];
-    const readJson = async (name) => {
+    // Restore IPC: import JSON files from a selected backup directory
+    ipcMain.handle('backup:restore', async () => {
       try {
-        const p = path.join(dir, `${name}.json`);
-        const s = await fs.readFile(p, 'utf8');
-        const arr = JSON.parse(s);
-        return Array.isArray(arr) ? arr : [];
-      } catch {
-        return [];
-      }
-    };
-
-    const models = getLocalModels();
-    const collections = [
-      { name: 'products', model: models.Product },
-      { name: 'customers', model: models.Customer },
-      { name: 'plumbers', model: models.Plumber },
-      { name: 'invoices', model: models.Invoice },
-      { name: 'return_invoices', model: models.ReturnInvoice }
-    ];
-
-    const results = {};
-    let maxInvoiceFromDump = 0;
-    for (const { name, model } of collections) {
-      const docs = await readJson(name);
-      if (!docs.length) { results[name] = { matched: 0, upserted: 0 }; continue; }
-
-      // Prepare bulk upserts by _id to avoid duplicates
-      const ops = docs
-        .filter(d => d && d._id)
-        .map(d => {
-          const {_id, ...rest} = d;
-          return {
-            updateOne: {
-              filter: { _id },
-              update: { $set: rest },
-              upsert: true
-            }
-          };
+        const win = BrowserWindow.getFocusedWindow();
+        const { canceled, filePaths } = await dialog.showOpenDialog(win || null, {
+          title: 'اختر مجلد النسخة للاستراد',
+          buttonLabel: 'اختر هذا المجلد',
+          properties: ['openDirectory']
         });
-      if (!ops.length) { results[name] = { matched: 0, upserted: 0 }; continue; }
-      const r = await model.bulkWrite(ops, { ordered: false });
-      results[name] = { matched: r.matchedCount || 0, upserted: r.upsertedCount || 0 };
+        if (canceled || !filePaths || !filePaths[0]) {
+          return { canceled: true };
+        }
 
-      if (name === 'invoices') {
-        for (const d of docs) {
-          if (typeof d.invoiceNumber === 'number') {
-            if (d.invoiceNumber > maxInvoiceFromDump) maxInvoiceFromDump = d.invoiceNumber;
+        const dir = filePaths[0];
+        const readJson = async name => {
+          try {
+            const p = path.join(dir, `${name}.json`);
+            const s = await fs.readFile(p, 'utf8');
+            const arr = JSON.parse(s);
+            return Array.isArray(arr) ? arr : [];
+          } catch {
+            return [];
+          }
+        };
+
+        const models = getLocalModels();
+        const collections = [
+          { name: 'products', model: models.Product },
+          { name: 'customers', model: models.Customer },
+          { name: 'plumbers', model: models.Plumber },
+          { name: 'invoices', model: models.Invoice },
+          { name: 'return_invoices', model: models.ReturnInvoice }
+        ];
+
+        const results = {};
+        let maxInvoiceFromDump = 0;
+        for (const { name, model } of collections) {
+          const docs = await readJson(name);
+          if (!docs.length) {
+            results[name] = { matched: 0, upserted: 0 };
+            continue;
+          }
+
+          // Prepare bulk upserts by _id to avoid duplicates
+          const ops = docs
+            .filter(d => d && d._id)
+            .map(d => {
+              const { _id, ...rest } = d;
+              return {
+                updateOne: {
+                  filter: { _id },
+                  update: { $set: rest },
+                  upsert: true
+                }
+              };
+            });
+          if (!ops.length) {
+            results[name] = { matched: 0, upserted: 0 };
+            continue;
+          }
+          const r = await model.bulkWrite(ops, { ordered: false });
+          results[name] = { matched: r.matchedCount || 0, upserted: r.upsertedCount || 0 };
+
+          if (name === 'invoices') {
+            for (const d of docs) {
+              if (typeof d.invoiceNumber === 'number') {
+                if (d.invoiceNumber > maxInvoiceFromDump) {
+                  maxInvoiceFromDump = d.invoiceNumber;
+                }
+              }
+            }
           }
         }
-      }
-    }
 
-    // Restore counters: upsert any provided counters, then ensure invoiceNumber seq >= max invoiceNumber from dump
-    const counterDocs = await readJson('counters');
-    if (Array.isArray(counterDocs) && counterDocs.length) {
-      const ops = counterDocs
-        .filter(d => d && d._id)
-        .map(d => ({
-          updateOne: {
-            filter: { _id: d._id },
-            update: { $set: { seq: d.seq || 0 } },
-            upsert: true
+        // Restore counters: upsert any provided counters, then ensure invoiceNumber seq >= max invoiceNumber from dump
+        const counterDocs = await readJson('counters');
+        if (Array.isArray(counterDocs) && counterDocs.length) {
+          const ops = counterDocs
+            .filter(d => d && d._id)
+            .map(d => ({
+              updateOne: {
+                filter: { _id: d._id },
+                update: { $set: { seq: d.seq || 0 } },
+                upsert: true
+              }
+            }));
+          if (ops.length) {
+            await models.Counter.bulkWrite(ops, { ordered: false });
           }
-        }));
-      if (ops.length) await models.Counter.bulkWrite(ops, { ordered: false });
-    }
-    if (maxInvoiceFromDump > 0) {
-      await models.Counter.findOneAndUpdate(
-        { _id: 'invoiceNumber' },
-        { $max: { seq: Math.max(1024, maxInvoiceFromDump) } },
-        { upsert: true }
-      );
-    } else {
-      // Initialize counter to 1024 if no invoices in dump (so next will be 1025)
-      await models.Counter.findOneAndUpdate(
-        { _id: 'invoiceNumber' },
-        { $set: { seq: 1024 } },
-        { upsert: true }
-      );
-    }
+        }
+        if (maxInvoiceFromDump > 0) {
+          await models.Counter.findOneAndUpdate(
+            { _id: 'invoiceNumber' },
+            { $max: { seq: Math.max(1024, maxInvoiceFromDump) } },
+            { upsert: true }
+          );
+        } else {
+          // Initialize counter to 1024 if no invoices in dump (so next will be 1025)
+          await models.Counter.findOneAndUpdate({ _id: 'invoiceNumber' }, { $set: { seq: 1024 } }, { upsert: true });
+        }
 
-    return { success: true, results };
-  } catch (error) {
-    console.error('❌ Restore error:', error);
-    return { error: true, message: error.message };
-  }
-});
-
-// Backup IPC: export all local DB collections to JSON files in a chosen directory
-ipcMain.handle('backup:run', async () => {
-  try {
-    const win = BrowserWindow.getFocusedWindow();
-    const { canceled, filePaths } = await dialog.showOpenDialog(win || null, {
-      title: 'اختر مجلد النسخة الاحتياطية (USB)',
-      buttonLabel: 'اختر هذا المجلد',
-      properties: ['openDirectory', 'createDirectory']
+        return { success: true, results };
+      } catch (error) {
+        console.error('❌ Restore error:', error);
+        return { error: true, message: error.message };
+      }
     });
-    if (canceled || !filePaths || !filePaths[0]) {
-      return { canceled: true };
-    }
 
-    const baseDir = filePaths[0];
-    const ts = new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    const ms = String(ts.getMilliseconds()).padStart(3, '0');
-    const baseFolder = `PlumbingShopBackup_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}_${ms}`;
-    let outDir = path.join(baseDir, baseFolder);
-    // Ensure unique directory name to avoid accidental overwrites or duplicates
-    let suffix = 2;
-    try {
-      // If exists, keep incrementing suffix
-      // fs.access throws if not exists
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        await fs.access(outDir).then(() => {
-          outDir = path.join(baseDir, `${baseFolder}-${suffix++}`);
-        }).catch(() => { throw new Error('STOP_LOOP'); });
+    // Backup IPC: export all local DB collections to JSON files in a chosen directory
+    ipcMain.handle('backup:run', async () => {
+      try {
+        const win = BrowserWindow.getFocusedWindow();
+        const { canceled, filePaths } = await dialog.showOpenDialog(win || null, {
+          title: 'اختر مجلد النسخة الاحتياطية (USB)',
+          buttonLabel: 'اختر هذا المجلد',
+          properties: ['openDirectory', 'createDirectory']
+        });
+        if (canceled || !filePaths || !filePaths[0]) {
+          return { canceled: true };
+        }
+
+        const baseDir = filePaths[0];
+        const ts = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        const ms = String(ts.getMilliseconds()).padStart(3, '0');
+        const baseFolder = `PlumbingShopBackup_${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}_${ms}`;
+        let outDir = path.join(baseDir, baseFolder);
+        // Ensure unique directory name to avoid accidental overwrites or duplicates
+        let suffix = 2;
+        try {
+          // If exists, keep incrementing suffix
+          // fs.access throws if not exists
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
+            await fs
+              .access(outDir)
+              .then(() => {
+                outDir = path.join(baseDir, `${baseFolder}-${suffix++}`);
+              })
+              .catch(() => {
+                throw new Error('STOP_LOOP');
+              });
+          }
+        } catch (e) {
+          // Expected to break loop when directory doesn't exist
+          if (e && e.message !== 'STOP_LOOP') {
+            // Unexpected error
+          }
+        }
+        await fs.mkdir(outDir, { recursive: true });
+
+        const models = getLocalModels();
+        const dumpOne = async (name, model) => {
+          const docs = await model.find({}).lean().exec();
+          const file = path.join(outDir, `${name}.json`);
+          await fs.writeFile(file, JSON.stringify(docs, null, 2), 'utf8');
+        };
+
+        await dumpOne('products', models.Product);
+        await dumpOne('customers', models.Customer);
+        await dumpOne('plumbers', models.Plumber);
+        await dumpOne('invoices', models.Invoice);
+        await dumpOne('return_invoices', models.ReturnInvoice);
+        // Dump counters (e.g., invoiceNumber sequence)
+        const counters = await models.Counter.find({}).lean().exec();
+        await fs.writeFile(path.join(outDir, 'counters.json'), JSON.stringify(counters, null, 2), 'utf8');
+
+        return { success: true, directory: outDir };
+      } catch (error) {
+        console.error('❌ Backup error:', error);
+        return { error: true, message: error.message };
       }
-    } catch (e) {
-      // Expected to break loop when directory doesn't exist
-      if (e && e.message !== 'STOP_LOOP') {
-        // Unexpected error
+    });
+
+    ipcMain.handle('products:lowStock', async () => {
+      try {
+        console.log('📉 Listing low-stock products');
+        const products = await productService.listLowStockProducts();
+        console.log('✅ Low-stock count', products.length);
+        return products;
+      } catch (error) {
+        console.error('❌ Error listing low-stock products:', error);
+        return { error: true, message: error.message };
       }
-    }
-    await fs.mkdir(outDir, { recursive: true });
+    });
 
-    const models = getLocalModels();
-    const dumpOne = async (name, model) => {
-      const docs = await model.find({}).lean().exec();
-      const file = path.join(outDir, `${name}.json`);
-      await fs.writeFile(file, JSON.stringify(docs, null, 2), 'utf8');
-    };
-
-    await dumpOne('products', models.Product);
-    await dumpOne('customers', models.Customer);
-    await dumpOne('plumbers', models.Plumber);
-    await dumpOne('invoices', models.Invoice);
-    await dumpOne('return_invoices', models.ReturnInvoice);
-    // Dump counters (e.g., invoiceNumber sequence)
-    const counters = await models.Counter.find({}).lean().exec();
-    await fs.writeFile(path.join(outDir, 'counters.json'), JSON.stringify(counters, null, 2), 'utf8');
-
-    return { success: true, directory: outDir };
-  } catch (error) {
-    console.error('❌ Backup error:', error);
-    return { error: true, message: error.message };
-  }
-});
-
-ipcMain.handle('products:lowStock', async () => {
-  try {
-    console.log('📉 Listing low-stock products');
-    const products = await productService.listLowStockProducts();
-    console.log('✅ Low-stock count', products.length);
-    return products;
-  } catch (error) {
-    console.error('❌ Error listing low-stock products:', error);
-    return { error: true, message: error.message };
-  }
-});
-
-ipcMain.handle('products:updatePopularity', async (event, { id, quantity }) => {
-  try {
-    console.log('📈 Updating product popularity:', { id, quantity });
-    const product = await productService.updateProductPopularity(id, quantity);
-    console.log('✅ Product popularity updated');
-    return product;
-  } catch (error) {
-    console.error('❌ Error updating product popularity:', error);
-    return { error: true, message: error.message };
-  }
-});
+    ipcMain.handle('products:updatePopularity', async (event, { id, quantity }) => {
+      try {
+        console.log('📈 Updating product popularity:', { id, quantity });
+        const product = await productService.updateProductPopularity(id, quantity);
+        console.log('✅ Product popularity updated');
+        return product;
+      } catch (error) {
+        console.error('❌ Error updating product popularity:', error);
+        return { error: true, message: error.message };
+      }
+    });
 
     // Developer tools disabled for production
-    
+
     console.log('🌐 Loading main window...');
     await mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
     console.log('✅ Application loaded successfully');
-    
   } catch (error) {
     console.error('❌ Error creating window:', error);
     console.error('Stack trace:', error.stack);
-    
+
     // Send a non-blocking error message to the renderer process
     if (mainWindow) {
       mainWindow.webContents.send('show-error', `Failed to start application: ${error.message}`);
@@ -274,7 +300,7 @@ app.whenReady().then(() => {
     console.error('❌ Failed to create window:', error);
     app.quit();
   });
-  
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow().catch(error => {
@@ -285,7 +311,7 @@ app.whenReady().then(() => {
 });
 
 // Global error handlers
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', error => {
   console.error('❌ Uncaught Exception:', error);
   console.error('Stack trace:', error.stack);
 });
@@ -295,22 +321,29 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 app.on('window-all-closed', function () {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
 });
 
-// Product IPC
-ipcMain.handle('products:create', async (_e, payload) => {
-  try {
+// Product IPC with improved error handling and validation
+ipcMain.handle(
+  'products:create',
+  asyncErrorHandler(async (_e, payload) => {
     console.log('📦 Creating product:', payload);
-    const created = await productService.createProduct(payload);
+
+    // Validate input
+    const validation = validateProduct(payload);
+    if (!validation.isValid) {
+      throw new Error(validation.errors.join(', '));
+    }
+
+    const created = await productService.createProduct(validation.sanitizedData);
     await enqueueSync('Product', 'upsert', created);
     console.log('✅ Product created:', created._id);
     return created;
-  } catch (error) {
-    console.error('❌ Error creating product:', error);
-    return { error: true, message: error.message };
-  }
-});
+  })
+);
 
 ipcMain.handle('products:search', async (_e, prefix) => {
   try {
@@ -336,22 +369,27 @@ ipcMain.handle('products:list', async () => {
   }
 });
 
-ipcMain.handle('products:update', async (_e, { id, update }) => {
-  try {
-    const normalizedId = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+ipcMain.handle(
+  'products:update',
+  asyncErrorHandler(async (_e, { id, update }) => {
+    const normalizedId = normalizeId(id);
     if (!normalizedId) {
-      return { error: true, message: 'Invalid product ID format' };
+      throw new Error('معرف المنتج غير صالح');
     }
-    console.log('📝 Updating product:', normalizedId, update);
-    const updated = await productService.updateProduct(normalizedId, update);
-    await enqueueSync('Product', 'update', { id: normalizedId, update });
+
+    // Validate update data
+    const validation = validateProduct({ ...update, name: update.name || 'temp' });
+    if (!validation.isValid) {
+      throw new Error(validation.errors.join(', '));
+    }
+
+    console.log('📝 Updating product:', normalizedId);
+    const updated = await productService.updateProduct(normalizedId, validation.sanitizedData);
+    await enqueueSync('Product', 'update', { id: normalizedId, update: validation.sanitizedData });
     console.log('✅ Product updated:', normalizedId);
     return updated;
-  } catch (error) {
-    console.error('❌ Error updating product:', error);
-    return { error: true, message: error.message };
-  }
-});
+  })
+);
 
 ipcMain.handle('products:delete', async (_e, id) => {
   try {
@@ -370,16 +408,21 @@ ipcMain.handle('products:delete', async (_e, id) => {
   }
 });
 
-// Customer IPC
-ipcMain.handle('customers:upsert', async (_e, payload) => {
-  try {
-    const customer = await customerService.upsertCustomerByPhone(payload);
+// Customer IPC with improved validation
+ipcMain.handle(
+  'customers:upsert',
+  asyncErrorHandler(async (_e, payload) => {
+    // Validate customer data
+    const validation = validateCustomer(payload);
+    if (!validation.isValid) {
+      throw new Error(validation.errors.join(', '));
+    }
+
+    const customer = await customerService.upsertCustomerByPhone(validation.sanitizedData);
     await enqueueSync('Customer', 'upsert', customer);
     return customer;
-  } catch (error) {
-    throw new Error(error?.message || 'Failed to create customer');
-  }
-});
+  })
+);
 
 ipcMain.handle('customers:list', async () => customerService.listCustomers());
 ipcMain.handle('customers:search', async (_e, prefix) => customerService.searchCustomers(prefix));
@@ -387,7 +430,9 @@ ipcMain.handle('customers:search', async (_e, prefix) => customerService.searchC
 ipcMain.handle('customers:update', async (_e, { id, data }) => {
   try {
     const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
-    if (!norm) return { error: true, message: 'Invalid customer ID format' };
+    if (!norm) {
+      return { error: true, message: 'Invalid customer ID format' };
+    }
     const updated = await customerService.updateCustomer(norm, data || {});
     await enqueueSync('Customer', 'update', { id: norm, update: data || {} });
     return updated;
@@ -399,7 +444,9 @@ ipcMain.handle('customers:update', async (_e, { id, data }) => {
 ipcMain.handle('customers:delete', async (_e, id) => {
   try {
     const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
-    if (!norm) return { error: true, message: 'Invalid customer ID format' };
+    if (!norm) {
+      return { error: true, message: 'Invalid customer ID format' };
+    }
     const deleted = await customerService.deleteCustomer(norm);
     await enqueueSync('Customer', 'delete', { id: norm });
     return deleted;
@@ -425,7 +472,9 @@ ipcMain.handle('plumbers:search', async (_e, prefix) => plumberService.searchPlu
 ipcMain.handle('plumbers:update', async (_e, { id, data }) => {
   try {
     const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
-    if (!norm) return { error: true, message: 'Invalid plumber ID format' };
+    if (!norm) {
+      return { error: true, message: 'Invalid plumber ID format' };
+    }
     const updated = await plumberService.updatePlumber(norm, data || {});
     await enqueueSync('Plumber', 'update', { id: norm, update: data || {} });
     return updated;
@@ -437,7 +486,9 @@ ipcMain.handle('plumbers:update', async (_e, { id, data }) => {
 ipcMain.handle('plumbers:delete', async (_e, id) => {
   try {
     const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
-    if (!norm) return { error: true, message: 'Invalid plumber ID format' };
+    if (!norm) {
+      return { error: true, message: 'Invalid plumber ID format' };
+    }
     const deleted = await plumberService.deletePlumber(norm);
     await enqueueSync('Plumber', 'delete', { id: norm });
     return deleted;
@@ -465,7 +516,7 @@ ipcMain.handle('invoices:getById', async (_e, id) => invoiceService.getInvoiceBy
 
 ipcMain.handle('invoices:addPayment', async (_e, { invoiceId, payment }) => {
   try {
-    console.log("IPC 'invoices:addPayment' received:", { invoiceIdType: typeof invoiceId, invoiceId });
+    console.log('IPC \'invoices:addPayment\' received:', { invoiceIdType: typeof invoiceId, invoiceId });
     const s = String(invoiceId ?? '').trim();
     let keyForSync = null;
     let targetId = null;
@@ -475,28 +526,39 @@ ipcMain.handle('invoices:addPayment', async (_e, { invoiceId, payment }) => {
       keyForSync = targetId;
     } else {
       // Normalize invoiceId to a valid ObjectId string defensively
-      const normalizedId = toObjectIdString(invoiceId)
-        || toObjectIdString(invoiceId?._id)
-        || toObjectIdString(invoiceId?.id);
-      console.log("IPC 'invoices:addPayment' normalizedId:", normalizedId);
+      const normalizedId =
+        toObjectIdString(invoiceId) || toObjectIdString(invoiceId?._id) || toObjectIdString(invoiceId?.id);
+      console.log('IPC \'invoices:addPayment\' normalizedId:', normalizedId);
       if (!normalizedId) {
-        return { error: true, message: `Invalid invoice ID format` };
+        return { error: true, message: 'Invalid invoice ID format' };
       }
       targetId = normalizedId;
       keyForSync = normalizedId;
     }
-    const result = await invoiceService.addPaymentToInvoice(targetId, payment || {});
-    await enqueueSync('Invoice', 'update', { id: keyForSync, update: { payments: result.payments, remaining: result.remaining } });
+    // Validate payment data before processing
+    if (!payment || typeof payment !== 'object') {
+      return { error: true, message: 'بيانات الدفعة مطلوبة' };
+    }
+    
+    if (!payment.amount || isNaN(payment.amount) || Number(payment.amount) <= 0) {
+      return { error: true, message: 'مبلغ الدفعة مطلوب ويجب أن يكون رقم موجب' };
+    }
+    
+    const result = await invoiceService.addPaymentToInvoice(targetId, payment);
+    await enqueueSync('Invoice', 'update', {
+      id: keyForSync,
+      update: { payments: result.payments, remaining: result.remaining }
+    });
     return result;
   } catch (error) {
     console.error('Error occurred in handler for \'invoices:addPayment\':', error);
     let userMessage = error.message;
-    
+
     // Handle version errors specifically
     if (error.name === 'VersionError') {
       userMessage = 'تم تعديل الفاتورة من قبل مستخدم آخر. يرجى المحاولة مرة أخرى.';
     }
-    
+
     return { error: true, message: userMessage };
   }
 });
@@ -515,12 +577,12 @@ ipcMain.handle('invoices:update', async (_e, { invoiceId, updateData }) => {
   } catch (error) {
     console.error('Error occurred in handler for \'invoices:update\':', error);
     let userMessage = error.message;
-    
+
     // Handle version errors specifically
     if (error.name === 'VersionError') {
       userMessage = 'تم تعديل الفاتورة من قبل مستخدم آخر. يرجى المحاولة مرة أخرى.';
     }
-    
+
     return { error: true, message: userMessage };
   }
 });
@@ -587,7 +649,8 @@ ipcMain.handle('returns:update', async (_e, { returnId, updateData }) => {
 });
 
 ipcMain.handle('print:invoice', async (_e, payload) => {
-  const { invoiceId, fontSize } = (payload && typeof payload === 'object') ? payload : { invoiceId: payload, fontSize: undefined };
+  const { invoiceId, fontSize } =
+    payload && typeof payload === 'object' ? payload : { invoiceId: payload, fontSize: undefined };
   const html = await invoiceService.generateInvoicePrintableHtml(invoiceId, { fontSize });
   // Open a visible preview window and trigger Chromium's print preview (allows "Save to PDF")
   const win = new BrowserWindow({

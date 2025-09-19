@@ -2,14 +2,14 @@
 
 async function showEditInvoiceForm(invoiceId) {
   console.log('Opening edit form for invoice:', invoiceId);
-  
+
   try {
     const inv = await window.api.invoices.getById(invoiceId);
     if (!inv) {
       showErrorMessage('لم يتم العثور على الفاتورة');
       return;
     }
-    
+
     // Create modal overlay
     const modal = document.createElement('div');
     modal.id = 'edit-invoice-modal';
@@ -26,18 +26,21 @@ async function showEditInvoiceForm(invoiceId) {
       justify-content: center;
       overflow-y: auto;
     `;
-    
+
     // Build a display ID: prefer numeric invoiceNumber, else last 6 of _id
     let internalIdStr = inv._id;
     if (typeof internalIdStr === 'object' && internalIdStr?.buffer) {
-      internalIdStr = Array.from(internalIdStr.buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+      internalIdStr = Array.from(internalIdStr.buffer)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
     } else if (typeof internalIdStr === 'object' && internalIdStr?.toString) {
       internalIdStr = internalIdStr.toString();
     } else {
       internalIdStr = String(internalIdStr);
     }
-    const shortId = (internalIdStr && typeof internalIdStr === 'string') ? internalIdStr.slice(-6) : '';
-    const displayId = (Number.isFinite(Number(inv.invoiceNumber)) && inv.invoiceNumber !== 0) ? inv.invoiceNumber : (shortId || 'غير محدد');
+    const shortId = internalIdStr && typeof internalIdStr === 'string' ? internalIdStr.slice(-6) : '';
+    const displayId =
+      Number.isFinite(Number(inv.invoiceNumber)) && inv.invoiceNumber !== 0 ? inv.invoiceNumber : shortId || 'غير محدد';
 
     modal.innerHTML = `
       <div style="background: white; padding: 24px; border-radius: 12px; max-width: 960px; width: 95%; max-height: 90%; overflow-y: auto; direction: rtl; box-shadow: 0 10px 30px rgba(0,0,0,0.15)">
@@ -88,7 +91,9 @@ async function showEditInvoiceForm(invoiceId) {
                 </tr>
               </thead>
               <tbody id="edit-items-body">
-                ${(inv.items || []).map((item, index) => `
+                ${(inv.items || [])
+    .map(
+      (item, index) => `
                   <tr>
                     <td style="padding: 8px; border: 1px solid #d1d5db; position: relative;">
                       <input type="text" data-index="${index}" class="edit-item-name" value="${item.product?.name || ''}" style="width: 100%; border: none; background: transparent;" />
@@ -110,7 +115,9 @@ async function showEditInvoiceForm(invoiceId) {
                       <button type="button" class="remove-item-btn" data-index="${index}" style="background: #dc2626; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">حذف</button>
                     </td>
                   </tr>
-                `).join('')}
+                `
+    )
+    .join('')}
               </tbody>
             </table>
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
@@ -126,18 +133,18 @@ async function showEditInvoiceForm(invoiceId) {
         </form>
       </div>
     `;
-    
+
     document.body.appendChild(modal);
-    
+
     // Add event listeners
     $('#close-edit-modal').addEventListener('click', () => {
       document.body.removeChild(modal);
     });
-    
+
     $('#cancel-edit').addEventListener('click', () => {
       document.body.removeChild(modal);
     });
-    
+
     // Add item functionality
     $('#add-edit-item').addEventListener('click', () => {
       const tbody = $('#edit-items-body');
@@ -168,9 +175,9 @@ async function showEditInvoiceForm(invoiceId) {
       attachLiveSearchToRow(newRow);
       recomputeEditTotals();
     });
-    
+
     // Remove item functionality
-    modal.addEventListener('click', (e) => {
+    modal.addEventListener('click', e => {
       if (e.target.classList.contains('remove-item-btn')) {
         e.preventDefault();
         e.stopPropagation();
@@ -181,7 +188,7 @@ async function showEditInvoiceForm(invoiceId) {
         }
       }
     });
-    
+
     // Attach live search to all current rows
     $$('#edit-items-body tr').forEach(tr => attachLiveSearchToRow(tr));
 
@@ -194,21 +201,25 @@ async function showEditInvoiceForm(invoiceId) {
         total += qty * price;
       });
       const el = document.getElementById('edit-total-val');
-      if (el) el.textContent = String(Number(total.toFixed(2)));
+      if (el) {
+        el.textContent = String(Number(total.toFixed(2)));
+      }
     }
-    
+
     // Make recomputeEditTotals globally accessible
     window.recomputeEditTotals = recomputeEditTotals;
-    modal.addEventListener('input', (e) => {
-      if (e.target.closest('#edit-items-body')) recomputeEditTotals();
+    modal.addEventListener('input', e => {
+      if (e.target.closest('#edit-items-body')) {
+        recomputeEditTotals();
+      }
     });
     // Initialize totals on open
     recomputeEditTotals();
 
     // Form submission
-    $('#edit-invoice-form').addEventListener('submit', async (e) => {
+    $('#edit-invoice-form').addEventListener('submit', async e => {
       e.preventDefault();
-      
+
       try {
         const updateData = {
           customer: {
@@ -221,7 +232,7 @@ async function showEditInvoiceForm(invoiceId) {
           notes: $('#edit-invoice-notes').value.trim(),
           items: []
         };
-        
+
         // Collect items
         const itemRows = $$('#edit-items-body tr');
         itemRows.forEach(row => {
@@ -230,7 +241,7 @@ async function showEditInvoiceForm(invoiceId) {
           const price = Number(row.querySelector('.edit-item-price').value || 0);
           const category = row.querySelector('.edit-item-category').value.trim();
           const delivered = !!row.querySelector('.edit-item-delivered')?.checked;
-          
+
           if (name && qty > 0) {
             updateData.items.push({
               name,
@@ -241,36 +252,34 @@ async function showEditInvoiceForm(invoiceId) {
             });
           }
         });
-        
+
         if (updateData.items.length === 0) {
           showErrorMessage('يجب إضافة بند واحد على الأقل');
           return;
         }
-        
+
         await window.api.invoices.update(invoiceId, updateData);
-        
+
         // Close modal
         document.body.removeChild(modal);
-        
+
         // Refresh displays
         await loadInvoices();
         await showInvoiceDetail(invoiceId);
-        
+
         showErrorMessage('تم تحديث الفاتورة بنجاح', 'success');
-        
       } catch (error) {
         console.error('Error updating invoice:', error);
         showErrorMessage('خطأ في تحديث الفاتورة: ' + error.message);
       }
     });
-    
+
     // Close modal when clicking outside
-    modal.addEventListener('click', (e) => {
+    modal.addEventListener('click', e => {
       if (e.target === modal) {
         document.body.removeChild(modal);
       }
     });
-    
   } catch (error) {
     console.error('Error opening edit form:', error);
     showErrorMessage('خطأ في فتح نموذج التعديل: ' + error.message);
@@ -280,7 +289,7 @@ async function showEditInvoiceForm(invoiceId) {
 // Debounce utility for limiting rapid input calls
 function debounce(fn, delay = 200) {
   let t;
-  return function(...args) {
+  return function (...args) {
     clearTimeout(t);
     t = setTimeout(() => fn.apply(this, args), delay);
   };
@@ -288,64 +297,93 @@ function debounce(fn, delay = 200) {
 
 // Wire live search/autocomplete behavior for a given edit table row
 function attachLiveSearchToRow(tr) {
-  if (!tr) return;
+  if (!tr) {
+    return;
+  }
   const nameInput = tr.querySelector('.edit-item-name');
   const priceInput = tr.querySelector('.edit-item-price');
   const categoryInput = tr.querySelector('.edit-item-category');
   const sugg = tr.querySelector('.edit-item-suggestions');
-  if (!nameInput || !sugg) return;
+  if (!nameInput || !sugg) {
+    return;
+  }
 
-  const hide = () => { sugg.style.display = 'none'; };
-  const show = () => { sugg.style.display = 'block'; };
+  const hide = () => {
+    sugg.style.display = 'none';
+  };
+  const show = () => {
+    sugg.style.display = 'block';
+  };
 
-  const renderList = (list) => {
-    if (!list || !list.length) { sugg.innerHTML = ''; hide(); return; }
-    sugg.innerHTML = list.map(p => {
-      const price = (p.sellingPrice ?? p.price ?? 0);
-      const cat = (p.category || '');
-      const safeName = (p.name || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      return `<div class="opt" data-name="${safeName}" data-price="${price}" data-category="${cat}" style="padding:6px 8px; cursor:pointer; border-bottom:1px solid #eee;">
+  const renderList = list => {
+    if (!list || !list.length) {
+      sugg.innerHTML = '';
+      hide();
+      return;
+    }
+    sugg.innerHTML = list
+      .map(p => {
+        const price = p.sellingPrice ?? p.price ?? 0;
+        const cat = p.category || '';
+        const safeName = (p.name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<div class="opt" data-name="${safeName}" data-price="${price}" data-category="${cat}" style="padding:6px 8px; cursor:pointer; border-bottom:1px solid #eee;">
         <div style="display:flex; justify-content:space-between; gap:8px;">
           <span>${safeName}</span>
-          <span style="color:#6b7280; font-size:12px;">${price}${cat?` • ${cat}`:''}</span>
+          <span style="color:#6b7280; font-size:12px;">${price}${cat ? ` • ${cat}` : ''}</span>
         </div>
       </div>`;
-    }).join('');
+      })
+      .join('');
     show();
   };
 
   const doSearch = debounce(async () => {
     const q = (nameInput.value || '').trim();
-    if (!q) { sugg.innerHTML=''; hide(); return; }
+    if (!q) {
+      sugg.innerHTML = '';
+      hide();
+      return;
+    }
     try {
       const res = await window.api.products.search(q);
       renderList(res || []);
     } catch (e) {
       console.error('search error', e);
-      sugg.innerHTML=''; hide();
+      sugg.innerHTML = '';
+      hide();
     }
   }, 200);
 
   nameInput.addEventListener('input', doSearch);
   nameInput.addEventListener('focus', () => {
-    if (sugg.innerHTML && nameInput.value.trim()) show();
+    if (sugg.innerHTML && nameInput.value.trim()) {
+      show();
+    }
   });
 
   // Handle suggestion click (event delegation on container)
-  sugg.addEventListener('click', (e) => {
+  sugg.addEventListener('click', e => {
     const opt = e.target.closest('.opt');
-    if (!opt) return;
+    if (!opt) {
+      return;
+    }
     const n = opt.getAttribute('data-name') || '';
     const p = Number(opt.getAttribute('data-price') || 0);
     const c = opt.getAttribute('data-category') || '';
     nameInput.value = n;
-    if (priceInput) priceInput.value = String(p);
-    if (categoryInput) categoryInput.value = c;
+    if (priceInput) {
+      priceInput.value = String(p);
+    }
+    if (categoryInput) {
+      categoryInput.value = c;
+    }
     hide();
   });
 
   // Hide suggestions when clicking outside the row
-  document.addEventListener('click', (e) => {
-    if (!tr.contains(e.target)) hide();
+  document.addEventListener('click', e => {
+    if (!tr.contains(e.target)) {
+      hide();
+    }
   });
 }

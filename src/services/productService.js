@@ -1,7 +1,9 @@
 const { getLocalModels } = require('../database/db');
 
 function serialize(doc) {
-  if (!doc) return doc;
+  if (!doc) {
+    return doc;
+  }
   const obj = doc.toObject ? doc.toObject() : doc;
   return { ...obj, _id: String(obj._id) };
 }
@@ -28,16 +30,25 @@ async function listProducts() {
 async function searchProductsByNamePrefix(prefix) {
   const { Product } = getLocalModels();
   const rx = new RegExp('^' + (prefix || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-  const docs = await Product.find({ name: { $regex: rx } }).sort({ name: 1 }).limit(20).lean();
+  const docs = await Product.find({ name: { $regex: rx } })
+    .sort({ name: 1 })
+    .limit(20)
+    .lean();
   return docs.map(serialize);
 }
 
 async function updateProduct(id, update) {
   const { Product } = getLocalModels();
   const mapped = { ...update };
-  if (update.price != null) mapped.sellingPrice = update.price; // backward compat
-  if (update.buy != null) mapped.buyingPrice = update.buy;
-  if (update.category != null) mapped.category = String(update.category).trim();
+  if (update.price != null) {
+    mapped.sellingPrice = update.price;
+  } // backward compat
+  if (update.buy != null) {
+    mapped.buyingPrice = update.buy;
+  }
+  if (update.category != null) {
+    mapped.category = String(update.category).trim();
+  }
   const doc = await Product.findByIdAndUpdate(id, mapped, { new: true }).lean();
   return serialize(doc);
 }

@@ -24,16 +24,20 @@ function loadModelsFor(conn) {
 }
 
 async function connectLocalDb(uri) {
-  if (localConn) return localConn;
+  if (localConn) {
+    return localConn;
+  }
   try {
     console.log('🔄 Attempting to connect to MongoDB Atlas...');
-    localConn = await mongoose.createConnection(uri, { 
-      serverSelectionTimeoutMS: 15000,
-      maxPoolSize: 10,
-      bufferCommands: false,
-      retryWrites: true,
-      w: 'majority'
-    }).asPromise();
+    localConn = await mongoose
+      .createConnection(uri, {
+        serverSelectionTimeoutMS: 15000,
+        maxPoolSize: 10,
+        bufferCommands: false,
+        retryWrites: true,
+        w: 'majority'
+      })
+      .asPromise();
     console.log('✅ Connected to MongoDB Atlas successfully');
     localModels = loadModelsFor(localConn);
   } catch (err) {
@@ -46,7 +50,9 @@ async function connectLocalDb(uri) {
 }
 
 async function connectAtlasDb(uri) {
-  if (!uri) return null;
+  if (!uri) {
+    return null;
+  }
   try {
     atlasConn = await mongoose.createConnection(uri, { serverSelectionTimeoutMS: 3000 }).asPromise();
     atlasModels = loadModelsFor(atlasConn);

@@ -10,16 +10,16 @@ module.exports = {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      enableRemoteModule: false,
+      enableRemoteModule: false
     }
   },
-  
+
   // Development settings
   development: {
     openDevTools: true,
-    disableSandbox: true,
+    disableSandbox: true
   },
-  
+
   // Build configuration
   build: {
     appId: 'com.mycompany.plumbingshop',

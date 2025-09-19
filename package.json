@@ -3,14 +3,23 @@
   "version": "1.0.0",
   "main": "src/main/main.js",
   "scripts": {
-    "start": "cross-env ELECTRON_DISABLE_SANDBOX=1 electron .",
-    "dev": "ELECTRON_DISABLE_SANDBOX=1 electron .",
+    "start": "cross-env NODE_ENV=production electron .",
+    "dev": "cross-env NODE_ENV=development electron .",
     "build": "electron-builder",
     "dist": "electron-builder",
     "seed": "node scripts/seed.js",
     "wipe:local": "node scripts/wipe.js --local --yes",
     "wipe:atlas": "node scripts/wipe.js --atlas --yes",
-    "wipe:both": "node scripts/wipe.js --both --yes"
+    "wipe:both": "node scripts/wipe.js --both --yes",
+    "lint": "eslint src/ config/ scripts/ --ext .js,.ts",
+    "lint:fix": "eslint src/ config/ scripts/ --ext .js,.ts --fix",
+    "format": "prettier --write \"src/**/*.{js,ts,json}\" \"config/**/*.{js,ts,json}\" \"scripts/**/*.{js,ts,json}\"",
+    "format:check": "prettier --check \"src/**/*.{js,ts,json}\" \"config/**/*.{js,ts,json}\" \"scripts/**/*.{js,ts,json}\"",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "type-check": "tsc --noEmit",
+    "pre-commit": "npm run lint && npm run format:check && npm run type-check"
   },
   "keywords": [],
   "author": "Mohamed Ezz",
@@ -51,8 +60,20 @@
     "mongoose": "^8.17.1"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "cross-env": "^10.0.0",
     "electron": "^37.3.0",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.0",
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0",
+    "@types/jest": "^29.5.0",
+    "nodemon": "^3.1.0",
+    "concurrently": "^8.2.0",
+    "babel-jest": "^29.7.0",
+    "@babel/core": "^7.24.0",
+    "@babel/preset-env": "^7.24.0"
   }
 }

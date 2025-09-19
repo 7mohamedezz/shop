@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>متجر السباكة</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="css/components.css" />
 </head>
 <body>
   <header>
@@ -284,8 +285,12 @@
     </div>
   </div>
 
+  <!-- Notification container will be added by JavaScript -->
+  <div id="notification-container" class="notification-container"></div>
+  
   <script src="renderer.js"></script>
   <script src="edit-invoice.js"></script>
+  <script src="js/main.js"></script>
 
   <!-- Non-blocking confirmation modal -->
   <div id="confirm-modal" style="display:none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1001; align-items: center; justify-content: center;">
