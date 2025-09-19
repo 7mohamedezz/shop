@@ -7,7 +7,9 @@ module.exports = function loadProduct(connection) {
       buyingPrice: { type: Number, required: true, min: 0, default: 0 },
       sellingPrice: { type: Number, required: true, min: 0, default: 0 },
       stock: { type: Number, default: 0 },
-      reorderLevel: { type: Number, default: 0, min: 0 }
+      reorderLevel: { type: Number, default: 0, min: 0 },
+      isDeleted: { type: Boolean, default: false },
+      deletedAt: { type: Date, default: null }
     },
     { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
   );

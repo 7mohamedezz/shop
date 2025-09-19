@@ -3,7 +3,9 @@ module.exports = function loadCustomer(connection) {
   const CustomerSchema = new Schema(
     {
       name: { type: String, required: true, trim: true },
-      phone: { type: String, required: true, trim: true }
+      phone: { type: String, required: true, trim: true },
+      isDeleted: { type: Boolean, default: false },
+      deletedAt: { type: Date, default: null }
     },
     { timestamps: true }
   );

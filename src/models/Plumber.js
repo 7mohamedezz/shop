@@ -3,7 +3,9 @@ module.exports = function loadPlumber(connection) {
   const PlumberSchema = new Schema(
     {
       name: { type: String, required: true, trim: true },
-      phone: { type: String, default: '', trim: true, unique: true, sparse: true }
+      phone: { type: String, default: '', trim: true, unique: true, sparse: true },
+      isDeleted: { type: Boolean, default: false },
+      deletedAt: { type: Date, default: null }
     },
     { timestamps: true }
   );

@@ -149,6 +149,14 @@ class ApiService {
     return this.safeCall(() => window.electronAPI.invoke('products:lowStock'), 'جلب المنتجات قليلة المخزون');
   }
 
+  async getProductById(id, includeDeleted = false) {
+    return this.safeCall(() => window.electronAPI.invoke('products:getById', { id, includeDeleted }), 'جلب المنتج');
+  }
+
+  async getProductsByIds(ids, includeDeleted = false) {
+    return this.safeCall(() => window.electronAPI.invoke('products:getByIds', { ids, includeDeleted }), 'جلب المنتجات');
+  }
+
   /**
    * Customer API methods
    */
@@ -170,6 +178,45 @@ class ApiService {
 
   async listCustomers() {
     return this.safeCall(() => window.electronAPI.invoke('customers:list'), 'جلب قائمة العملاء');
+  }
+
+  async getCustomerById(id, includeDeleted = false) {
+    return this.safeCall(() => window.electronAPI.invoke('customers:getById', { id, includeDeleted }), 'جلب العميل');
+  }
+
+  async getCustomersByIds(ids, includeDeleted = false) {
+    return this.safeCall(() => window.electronAPI.invoke('customers:getByIds', { ids, includeDeleted }), 'جلب العملاء');
+  }
+
+  /**
+   * Plumber API methods
+   */
+  async upsertPlumber(plumberData) {
+    return this.safeCall(() => window.electronAPI.invoke('plumbers:upsert', plumberData), 'حفظ بيانات السباك');
+  }
+
+  async updatePlumber(id, data) {
+    return this.safeCall(() => window.electronAPI.invoke('plumbers:update', { id, data }), 'تحديث بيانات السباك');
+  }
+
+  async deletePlumber(id) {
+    return this.safeCall(() => window.electronAPI.invoke('plumbers:delete', id), 'حذف السباك');
+  }
+
+  async searchPlumbers(prefix) {
+    return this.safeCall(() => window.electronAPI.invoke('plumbers:search', prefix), 'البحث في السباكين');
+  }
+
+  async listPlumbers() {
+    return this.safeCall(() => window.electronAPI.invoke('plumbers:list'), 'جلب قائمة السباكين');
+  }
+
+  async getPlumberById(id, includeDeleted = false) {
+    return this.safeCall(() => window.electronAPI.invoke('plumbers:getById', { id, includeDeleted }), 'جلب السباك');
+  }
+
+  async getPlumbersByIds(ids, includeDeleted = false) {
+    return this.safeCall(() => window.electronAPI.invoke('plumbers:getByIds', { ids, includeDeleted }), 'جلب السباكين');
   }
 
   /**

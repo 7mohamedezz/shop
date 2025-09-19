@@ -23,14 +23,14 @@ async function createProduct(data) {
 
 async function listProducts() {
   const { Product } = getLocalModels();
-  const docs = await Product.find({}).sort({ createdAt: -1 }).lean();
+  const docs = await Product.find({ isDeleted: { $ne: true } }).sort({ createdAt: -1 }).lean();
   return docs.map(serialize);
 }
 
 async function searchProductsByNamePrefix(prefix) {
   const { Product } = getLocalModels();
   const rx = new RegExp('^' + (prefix || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-  const docs = await Product.find({ name: { $regex: rx } })
+  const docs = await Product.find({ name: { $regex: rx }, isDeleted: { $ne: true } })
     .sort({ name: 1 })
     .limit(20)
     .lean();
@@ -55,16 +55,44 @@ async function updateProduct(id, update) {
 
 async function deleteProduct(id) {
   const { Product } = getLocalModels();
-  const doc = await Product.findByIdAndDelete(id).lean();
+  const doc = await Product.findByIdAndUpdate(
+    id, 
+    { isDeleted: true, deletedAt: new Date() }, 
+    { new: true }
+  ).lean();
   return serialize(doc);
 }
 
 async function listLowStockProducts() {
   const { Product } = getLocalModels();
   // Products where reorderLevel > 0 and stock <= reorderLevel
-  const docs = await Product.find({ reorderLevel: { $gt: 0 }, $expr: { $lte: ['$stock', '$reorderLevel'] } })
+  const docs = await Product.find({ 
+    reorderLevel: { $gt: 0 }, 
+    $expr: { $lte: ['$stock', '$reorderLevel'] },
+    isDeleted: { $ne: true }
+  })
     .sort({ stock: 1, name: 1 })
     .lean();
+  return docs.map(serialize);
+}
+
+async function getProductById(id, includeDeleted = false) {
+  const { Product } = getLocalModels();
+  const query = { _id: id };
+  if (!includeDeleted) {
+    query.isDeleted = { $ne: true };
+  }
+  const doc = await Product.findOne(query).lean();
+  return serialize(doc);
+}
+
+async function getProductsByIds(ids, includeDeleted = false) {
+  const { Product } = getLocalModels();
+  const query = { _id: { $in: ids } };
+  if (!includeDeleted) {
+    query.isDeleted = { $ne: true };
+  }
+  const docs = await Product.find(query).lean();
   return docs.map(serialize);
 }
 
@@ -74,5 +102,7 @@ module.exports = {
   searchProductsByNamePrefix,
   updateProduct,
   deleteProduct,
-  listLowStockProducts
+  listLowStockProducts,
+  getProductById,
+  getProductsByIds
 };

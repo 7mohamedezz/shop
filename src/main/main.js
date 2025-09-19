@@ -399,11 +399,43 @@ ipcMain.handle('products:delete', async (_e, id) => {
     }
     console.log('🗑️ Deleting product:', normalizedId);
     const deleted = await productService.deleteProduct(normalizedId);
-    await enqueueSync('Product', 'delete', { id: normalizedId });
+    await enqueueSync('Product', 'update', { id: normalizedId, update: { isDeleted: true, deletedAt: new Date() } });
     console.log('✅ Product deleted:', normalizedId);
     return deleted;
   } catch (error) {
     console.error('❌ Error deleting product:', error);
+    return { error: true, message: error.message };
+  }
+});
+
+ipcMain.handle('products:getById', async (_e, { id, includeDeleted = false }) => {
+  try {
+    const normalizedId = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+    if (!normalizedId) {
+      return { error: true, message: 'Invalid product ID format' };
+    }
+    console.log('🔍 Getting product by ID:', normalizedId, 'includeDeleted:', includeDeleted);
+    const product = await productService.getProductById(normalizedId, includeDeleted);
+    console.log('✅ Product retrieved:', normalizedId);
+    return product;
+  } catch (error) {
+    console.error('❌ Error getting product:', error);
+    return { error: true, message: error.message };
+  }
+});
+
+ipcMain.handle('products:getByIds', async (_e, { ids, includeDeleted = false }) => {
+  try {
+    const normalizedIds = ids.map(id => toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id)).filter(Boolean);
+    if (normalizedIds.length === 0) {
+      return { error: true, message: 'No valid product IDs provided' };
+    }
+    console.log('🔍 Getting products by IDs:', normalizedIds.length, 'products, includeDeleted:', includeDeleted);
+    const products = await productService.getProductsByIds(normalizedIds, includeDeleted);
+    console.log('✅ Products retrieved:', products.length);
+    return products;
+  } catch (error) {
+    console.error('❌ Error getting products:', error);
     return { error: true, message: error.message };
   }
 });
@@ -448,9 +480,41 @@ ipcMain.handle('customers:delete', async (_e, id) => {
       return { error: true, message: 'Invalid customer ID format' };
     }
     const deleted = await customerService.deleteCustomer(norm);
-    await enqueueSync('Customer', 'delete', { id: norm });
+    await enqueueSync('Customer', 'update', { id: norm, update: { isDeleted: true, deletedAt: new Date() } });
     return deleted;
   } catch (error) {
+    return { error: true, message: error.message };
+  }
+});
+
+ipcMain.handle('customers:getById', async (_e, { id, includeDeleted = false }) => {
+  try {
+    const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+    if (!norm) {
+      return { error: true, message: 'Invalid customer ID format' };
+    }
+    console.log('🔍 Getting customer by ID:', norm, 'includeDeleted:', includeDeleted);
+    const customer = await customerService.getCustomerById(norm, includeDeleted);
+    console.log('✅ Customer retrieved:', norm);
+    return customer;
+  } catch (error) {
+    console.error('❌ Error getting customer:', error);
+    return { error: true, message: error.message };
+  }
+});
+
+ipcMain.handle('customers:getByIds', async (_e, { ids, includeDeleted = false }) => {
+  try {
+    const normalizedIds = ids.map(id => toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id)).filter(Boolean);
+    if (normalizedIds.length === 0) {
+      return { error: true, message: 'No valid customer IDs provided' };
+    }
+    console.log('🔍 Getting customers by IDs:', normalizedIds.length, 'customers, includeDeleted:', includeDeleted);
+    const customers = await customerService.getCustomersByIds(normalizedIds, includeDeleted);
+    console.log('✅ Customers retrieved:', customers.length);
+    return customers;
+  } catch (error) {
+    console.error('❌ Error getting customers:', error);
     return { error: true, message: error.message };
   }
 });
@@ -490,9 +554,41 @@ ipcMain.handle('plumbers:delete', async (_e, id) => {
       return { error: true, message: 'Invalid plumber ID format' };
     }
     const deleted = await plumberService.deletePlumber(norm);
-    await enqueueSync('Plumber', 'delete', { id: norm });
+    await enqueueSync('Plumber', 'update', { id: norm, update: { isDeleted: true, deletedAt: new Date() } });
     return deleted;
   } catch (error) {
+    return { error: true, message: error.message };
+  }
+});
+
+ipcMain.handle('plumbers:getById', async (_e, { id, includeDeleted = false }) => {
+  try {
+    const norm = toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id);
+    if (!norm) {
+      return { error: true, message: 'Invalid plumber ID format' };
+    }
+    console.log('🔍 Getting plumber by ID:', norm, 'includeDeleted:', includeDeleted);
+    const plumber = await plumberService.getPlumberById(norm, includeDeleted);
+    console.log('✅ Plumber retrieved:', norm);
+    return plumber;
+  } catch (error) {
+    console.error('❌ Error getting plumber:', error);
+    return { error: true, message: error.message };
+  }
+});
+
+ipcMain.handle('plumbers:getByIds', async (_e, { ids, includeDeleted = false }) => {
+  try {
+    const normalizedIds = ids.map(id => toObjectIdString(id) || toObjectIdString(id?._id) || toObjectIdString(id?.id)).filter(Boolean);
+    if (normalizedIds.length === 0) {
+      return { error: true, message: 'No valid plumber IDs provided' };
+    }
+    console.log('🔍 Getting plumbers by IDs:', normalizedIds.length, 'plumbers, includeDeleted:', includeDeleted);
+    const plumbers = await plumberService.getPlumbersByIds(normalizedIds, includeDeleted);
+    console.log('✅ Plumbers retrieved:', plumbers.length);
+    return plumbers;
+  } catch (error) {
+    console.error('❌ Error getting plumbers:', error);
     return { error: true, message: error.message };
   }
 });
