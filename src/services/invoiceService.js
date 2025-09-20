@@ -475,14 +475,15 @@ async function addPaymentToInvoice(invoiceId, payment) {
     .filter(p => (p.note || '').trim() !== 'مرتجع')
     .reduce((sum, p) => sum + (p.amount || 0), 0);
 
-  // Update totals
+  // Persist canonical fields on the Invoice model: `total` and `remaining`.
+  const returnTotal = (updatedInv.payments || [])
+    .filter(p => (p.note || '').trim() === 'مرتجع')
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+
   await Invoice.findByIdAndUpdate(inv._id, {
     $set: {
-      itemsTotal,
-      paidTotal,
-      remaining: itemsTotal - paidTotal - (updatedInv.payments || [])
-        .filter(p => (p.note || '').trim() === 'مرتجع')
-        .reduce((sum, p) => sum + (p.amount || 0), 0),
+      total: Number(itemsTotal.toFixed(2)),
+      remaining: Number((itemsTotal - paidTotal - returnTotal).toFixed(2)),
       updatedAt: new Date()
     }
   });
@@ -655,14 +656,14 @@ async function updateInvoice(invoiceId, updateData) {
   const paidTotal = (inv.payments || [])
     .filter(p => (p.note || '').trim() !== 'مرتجع')
     .reduce((sum, p) => sum + (p.amount || 0), 0);
-  updateFields.itemsTotal = itemsTotal;
-  updateFields.paidTotal = paidTotal;
+  // Persist canonical `total` field
+  updateFields.total = Number(itemsTotal.toFixed(2));
   // Calculate return total
   const returnTotal = (inv.payments || [])
     .filter(p => (p.note || '').trim() === 'مرتجع')
     .reduce((sum, p) => sum + (p.amount || 0), 0);
   
-  updateFields.remaining = itemsTotal - paidTotal - returnTotal;
+  updateFields.remaining = Number((itemsTotal - paidTotal - returnTotal).toFixed(2));
   updateFields.updatedAt = new Date();
 
   const updatedInv = await Invoice.findByIdAndUpdate(

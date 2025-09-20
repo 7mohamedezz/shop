@@ -25,6 +25,8 @@ class StateManager {
 
     this.subscribers = new Map();
     this.nextSubscriberId = 1;
+    // Keep an immutable snapshot of the initial defaults so we can persist only changed keys
+    this._initialState = JSON.parse(JSON.stringify(this.state));
   }
 
   /**
@@ -187,12 +189,39 @@ class StateManager {
     paths.forEach(path => {
       const value = this.get(path);
       if (value !== undefined) {
-        toStore[path] = value;
+        const initial = this._initialState && this._initialState[path];
+        if (initial && value && typeof value === 'object' && !Array.isArray(value)) {
+          // compute shallow diff of keys compared to initial
+          const diff = {};
+          Object.keys(value).forEach(k => {
+            try {
+              const a = JSON.stringify(value[k]);
+              const b = JSON.stringify(initial[k]);
+              if (a !== b) {
+                diff[k] = value[k];
+              }
+            } catch (_) {
+              if (value[k] !== initial[k]) {
+                diff[k] = value[k];
+              }
+            }
+          });
+          // only include if non-empty
+          if (Object.keys(diff).length > 0) {
+            toStore[path] = diff;
+          }
+        } else {
+          // primitive or no initial snapshot -> persist whole value
+          toStore[path] = value;
+        }
       }
     });
 
     try {
-      localStorage.setItem('app-state', JSON.stringify(toStore));
+      const storage = globalThis.localStorage || (typeof window !== 'undefined' && window.localStorage);
+      if (storage && typeof storage.setItem === 'function') {
+        storage.setItem('app-state', JSON.stringify(toStore));
+      }
     } catch (error) {
       console.warn('Failed to persist state:', error);
     }
@@ -204,7 +233,8 @@ class StateManager {
    */
   restore(paths = ['settings', 'filters']) {
     try {
-      const stored = localStorage.getItem('app-state');
+      const storage = globalThis.localStorage || (typeof window !== 'undefined' && window.localStorage);
+      const stored = storage && typeof storage.getItem === 'function' ? storage.getItem('app-state') : null;
       if (stored) {
         const parsedState = JSON.parse(stored);
         paths.forEach(path => {
