@@ -80,9 +80,16 @@ module.exports = function loadInvoice(connection) {
       (sum, it) => sum + (it.qty || 0) * ((it.discountedPrice ?? it.price) || 0),
       0
     );
-    const paid = (this.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+    // paid excluding returns
+    const paidNonReturn = (this.payments || [])
+      .filter(p => String((p.note || '')).trim() !== 'مرتجع')
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+    const returnTotal = (this.payments || [])
+      .filter(p => String((p.note || '')).trim() === 'مرتجع')
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+
     this.total = Number(itemsTotal.toFixed(2));
-    this.remaining = Number((this.total - paid).toFixed(2));
+    this.remaining = Number((this.total - (paidNonReturn + returnTotal)).toFixed(2));
   };
 
   return connection.models.Invoice || connection.model('Invoice', InvoiceSchema);

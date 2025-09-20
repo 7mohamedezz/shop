@@ -926,16 +926,21 @@ async function generateInvoicePrintableHtml(invoiceId, options = {}) {
   `
     )
     .join('');
-  const itemsTotal = Number(inv.total || 0);
+  // Derive monetary totals directly from items and payments to avoid stale stored values
+  const itemsTotal = Number(
+    ((inv.items || []).reduce((s, it) => s + Number(it.qty || 0) * Number((it.discountedPrice ?? it.price) || 0), 0) || 0).toFixed(2)
+  );
+
   const paidTotal = Number(
-    (inv.payments || [])
-      .filter(p => String(p.note || '').trim() !== 'مرتجع')
-      .reduce((s, x) => s + Number(x.amount || 0), 0)
-      .toFixed(2)
+    ((inv.payments || [])
+      .filter(p => String((p.note || '')).trim() !== 'مرتجع')
+      .reduce((s, x) => s + Number(x.amount || 0), 0) || 0).toFixed(2)
   );
+
   const returnTotal = Number(
-    (inv.returnInvoice?.items || []).reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0).toFixed(2)
+    (((inv.returnInvoice && inv.returnInvoice.items) || []).reduce((s, ri) => s + Number(ri.qty || 0) * Number(ri.price || 0), 0) || 0).toFixed(2)
   );
+
   const remaining = Number((itemsTotal - (paidTotal + returnTotal)).toFixed(2));
   // To ensure category is always present for returns, we'll build the items with a fresh lookup.
   let returnItemsHtml = '';

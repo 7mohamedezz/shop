@@ -422,25 +422,8 @@ function getCurrentPrintFontSize() {
   return getStoredFontSize('print-font-size', 12);
 }
 
-// Enhanced API call wrapper with error handling
-async function safeApiCall(apiCall, errorContext = '') {
-  try {
-    if (DEBUG_MODE) console.log(`🔄 API Call: ${errorContext}`);
-    const result = await apiCall();
-
-    // Check if result contains error
-    if (result && result.error) {
-      throw new Error(result.message || 'API returned error');
-    }
-
-    if (DEBUG_MODE) console.log(`✅ API Success: ${errorContext}`);
-    return result;
-  } catch (error) {
-    console.error(`❌ API Error in ${errorContext}:`, error);
-    showErrorMessage(`خطأ في ${errorContext}: ${error.message}`);
-    throw error;
-  }
-}
+// NOTE: duplicate safeApiCall removed; the enhanced version with loadingElement
+// is defined earlier to avoid duplicate declarations.
 
 // Tabs
 $$('.tab').forEach(btn =>
